@@ -147,6 +147,10 @@
             <el-icon><Delete /></el-icon>
             删除标注
           </el-button>
+          <el-button type="success" size="small" @click="showBucketCalculator = true">
+            <el-icon><Grid /></el-icon>
+            分桶计算器
+          </el-button>
         </div>
       </div>
       
@@ -566,6 +570,92 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 分桶计算器对话框 -->
+    <el-dialog
+      v-model="showBucketCalculator"
+      title="分桶计算器"
+      width="800px"
+      class="bucket-dialog"
+    >
+      <div class="bucket-config">
+        <el-form :inline="true" label-width="100px">
+          <el-form-item label="Batch Size">
+            <el-input-number v-model="bucketConfig.batchSize" :min="1" :max="16" />
+          </el-form-item>
+          <el-form-item label="分辨率限制">
+            <el-input-number v-model="bucketConfig.resolutionLimit" :min="256" :max="2048" :step="64" />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="calculateBuckets" :loading="calculatingBuckets">
+              计算分桶
+            </el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+      
+      <div class="bucket-results" v-if="bucketResults.length > 0">
+        <div class="bucket-summary">
+          <div class="summary-item">
+            <span class="label">总图片数</span>
+            <span class="value">{{ bucketSummary.totalImages }}</span>
+          </div>
+          <div class="summary-item">
+            <span class="label">桶数量</span>
+            <span class="value">{{ bucketResults.length }}</span>
+          </div>
+          <div class="summary-item">
+            <span class="label">总批次数</span>
+            <span class="value">{{ bucketSummary.totalBatches }}</span>
+          </div>
+          <div class="summary-item">
+            <span class="label">丢弃图片</span>
+            <span class="value" :class="{ 'text-warning': bucketSummary.droppedImages > 0 }">
+              {{ bucketSummary.droppedImages }}
+            </span>
+          </div>
+        </div>
+        
+        <el-table :data="bucketResults" style="width: 100%" max-height="400">
+          <el-table-column prop="resolution" label="分辨率" width="120">
+            <template #default="{ row }">
+              {{ row.width }}×{{ row.height }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="aspectRatio" label="宽高比" width="100">
+            <template #default="{ row }">
+              {{ row.aspectRatio.toFixed(2) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="count" label="图片数" width="80" />
+          <el-table-column prop="batches" label="批次数" width="80" />
+          <el-table-column prop="dropped" label="丢弃" width="60">
+            <template #default="{ row }">
+              <span :class="{ 'text-warning': row.dropped > 0 }">{{ row.dropped }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="分布" min-width="200">
+            <template #default="{ row }">
+              <el-progress 
+                :percentage="row.percentage" 
+                :stroke-width="12"
+                :show-text="false"
+                :color="getBucketColor(row.aspectRatio)"
+              />
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      
+      <div class="bucket-empty" v-else-if="!calculatingBuckets">
+        <el-icon :size="48"><Grid /></el-icon>
+        <p>点击「计算分桶」查看数据集的分桶分布</p>
+      </div>
+      
+      <template #footer>
+        <el-button @click="showBucketCalculator = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -575,7 +665,7 @@ import { useDatasetStore, type DatasetImage } from '@/stores/dataset'
 import { useTrainingStore } from '@/stores/training'
 import { useWebSocketStore } from '@/stores/websocket'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, InfoFilled, WarningFilled, MagicStick, ScaleToOriginal, Loading, Clock } from '@element-plus/icons-vue'
+import { Delete, InfoFilled, WarningFilled, MagicStick, ScaleToOriginal, Loading, Clock, Grid } from '@element-plus/icons-vue'
 import axios from 'axios'
 
 const datasetStore = useDatasetStore()
@@ -638,6 +728,104 @@ const resizeStatus = ref({
   completed: 0,
   current_file: ''
 })
+
+// 分桶计算器相关
+const showBucketCalculator = ref(false)
+const calculatingBuckets = ref(false)
+const bucketConfig = ref({
+  batchSize: 4,
+  resolutionLimit: 1536
+})
+interface BucketInfo {
+  width: number
+  height: number
+  aspectRatio: number
+  count: number
+  batches: number
+  dropped: number
+  percentage: number
+}
+const bucketResults = ref<BucketInfo[]>([])
+const bucketSummary = computed(() => {
+  const totalImages = bucketResults.value.reduce((sum, b) => sum + b.count, 0)
+  const totalBatches = bucketResults.value.reduce((sum, b) => sum + b.batches, 0)
+  const droppedImages = bucketResults.value.reduce((sum, b) => sum + b.dropped, 0)
+  return { totalImages, totalBatches, droppedImages }
+})
+
+function getBucketColor(aspectRatio: number): string {
+  // 根据宽高比返回颜色
+  if (aspectRatio < 0.8) return '#67c23a' // 竖图 - 绿色
+  if (aspectRatio > 1.2) return '#409eff' // 横图 - 蓝色
+  return '#f0b429' // 方图 - 金色
+}
+
+async function calculateBuckets() {
+  if (!currentView.value) return
+  
+  calculatingBuckets.value = true
+  bucketResults.value = []
+  
+  try {
+    // 从当前图片列表计算分桶
+    const images = datasetStore.currentImages
+    const limit = bucketConfig.value.resolutionLimit
+    const batchSize = bucketConfig.value.batchSize
+    
+    // 按分辨率分组
+    const buckets: Record<string, { width: number; height: number; count: number }> = {}
+    
+    for (const img of images) {
+      let w = img.width
+      let h = img.height
+      
+      // 应用分辨率限制
+      if (Math.max(w, h) > limit) {
+        const scale = limit / Math.max(w, h)
+        w = Math.floor(w * scale)
+        h = Math.floor(h * scale)
+      }
+      
+      // 对齐到 8 的倍数
+      w = Math.floor(w / 8) * 8
+      h = Math.floor(h / 8) * 8
+      
+      const key = `${w}x${h}`
+      if (!buckets[key]) {
+        buckets[key] = { width: w, height: h, count: 0 }
+      }
+      buckets[key].count++
+    }
+    
+    // 计算每个桶的批次数和丢弃数
+    const results: BucketInfo[] = []
+    const maxCount = Math.max(...Object.values(buckets).map(b => b.count))
+    
+    for (const [key, bucket] of Object.entries(buckets)) {
+      const batches = Math.floor(bucket.count / batchSize)
+      const dropped = bucket.count % batchSize
+      
+      results.push({
+        width: bucket.width,
+        height: bucket.height,
+        aspectRatio: bucket.width / bucket.height,
+        count: bucket.count,
+        batches,
+        dropped: batches > 0 ? dropped : bucket.count, // 如果没有完整批次，全部丢弃
+        percentage: Math.round((bucket.count / maxCount) * 100)
+      })
+    }
+    
+    // 按图片数量排序
+    results.sort((a, b) => b.count - a.count)
+    bucketResults.value = results
+    
+  } catch (error: any) {
+    ElMessage.error('计算分桶失败: ' + error.message)
+  } finally {
+    calculatingBuckets.value = false
+  }
+}
 
 // Ollama 标注相关
 const showOllamaDialog = ref(false)
@@ -2169,6 +2357,72 @@ function formatSize(bytes: number): string {
   border-radius: var(--radius-md);
   font-size: 13px;
   color: var(--el-color-primary);
+}
+
+/* 分桶计算器样式 */
+.bucket-dialog {
+  .bucket-config {
+    margin-bottom: 20px;
+    padding: 16px;
+    background: var(--bg-hover);
+    border-radius: var(--radius-md);
+  }
+  
+  .bucket-summary {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 20px;
+    padding: 16px;
+    background: var(--bg-card);
+    border-radius: var(--radius-md);
+    
+    .summary-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      
+      .label {
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+      
+      .value {
+        font-size: 24px;
+        font-weight: bold;
+        color: var(--primary);
+        
+        &.text-warning {
+          color: var(--warning);
+        }
+      }
+    }
+  }
+  
+  .bucket-results {
+    .text-warning {
+      color: var(--warning);
+      font-weight: bold;
+    }
+  }
+  
+  .bucket-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+    
+    .el-icon {
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+    
+    p {
+      font-size: 14px;
+    }
+  }
 }
 
 </style>
