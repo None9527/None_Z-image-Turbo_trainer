@@ -102,6 +102,9 @@ async def generate_cache(request: CacheGenerationRequest):
         if not request.vaePath:
             raise HTTPException(status_code=400, detail="VAE path is required for latent caching")
         
+        # 重置进度（清除上次遗留）
+        state.reset_cache_progress("latent")
+        
         cmd_latent = [
             sys.executable, "-m", "zimage_trainer.cache_latents",
             "--vae", request.vaePath,
@@ -130,6 +133,9 @@ async def generate_cache(request: CacheGenerationRequest):
     if request.generateText:
         if not request.textEncoderPath:
             raise HTTPException(status_code=400, detail="Text Encoder path is required for text caching")
+        
+        # 重置进度（清除上次遗留）
+        state.reset_cache_progress("text")
         
         # 如果同时请求了 latent，则排队等待（顺序执行）
         if request.generateLatent:
