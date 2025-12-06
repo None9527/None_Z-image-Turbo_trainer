@@ -409,9 +409,42 @@ class BucketBatchSampler(torch.utils.data.Sampler):
 
 def collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
     """
-    自定义 collate 函数。
+    自定义 collate 函数。支持不同分辨率的 latent（自动 padding）。
     """
-    latents = torch.stack([item['latents'] for item in batch])
+    # 检查是否所有 latents 具有相同形状
+    shapes = [item['latents'].shape for item in batch]
+    all_same = all(s == shapes[0] for s in shapes)
+    
+    if all_same:
+        # 所有形状相同，直接 stack
+        latents = torch.stack([item['latents'] for item in batch])
+    else:
+        # 形状不同，需要 padding 到最大尺寸
+        max_h = max(s[1] for s in shapes)
+        max_w = max(s[2] for s in shapes)
+        
+        # 确保尺寸能被 patch_size=2 整除
+        patch_size = 2
+        max_h = ((max_h + patch_size - 1) // patch_size) * patch_size
+        max_w = ((max_w + patch_size - 1) // patch_size) * patch_size
+        
+        padded_latents = []
+        for item in batch:
+            lat = item['latents']
+            c, h, w = lat.shape
+            if h < max_h or w < max_w:
+                # Pad to max size (right and bottom padding)
+                lat = torch.nn.functional.pad(
+                    lat,
+                    (0, max_w - w, 0, max_h - h),
+                    mode='constant',
+                    value=0
+                )
+            padded_latents.append(lat)
+        
+        latents = torch.stack(padded_latents)
+        logger.debug(f"Padded latents from {shapes} to {latents.shape}")
+    
     vl_embeds = [item['vl_embed'] for item in batch]  # 保持 list 形式
     
     return {
@@ -454,7 +487,12 @@ def create_dataloader(args) -> Union[DataLoader, SPDALoaderAdapter]:
     
     batch_size = config.get('batch_size', getattr(args, 'batch_size', 4))
     num_workers = config.get('num_workers', getattr(args, 'num_workers', 4))
-    enable_bucket = config.get('enable_bucket', True)
+    
+    # 分桶设置：--disable_bucket 优先级最高
+    if getattr(args, 'disable_bucket', False):
+        enable_bucket = False
+    else:
+        enable_bucket = config.get('enable_bucket', getattr(args, 'enable_bucket', True))
     
     # SPDA相关参数
     spda_enabled = config.get('spda_enabled', getattr(args, 'spda_enabled', False))

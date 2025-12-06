@@ -116,6 +116,10 @@ def parse_args():
     # 自动优化功能
     parser.add_argument("--auto_optimize", action="store_true", default=True, help="启用自动硬件优化")
     
+    # 数据加载参数
+    parser.add_argument("--enable_bucket", action="store_true", default=True, help="启用分桶 (按分辨率分组)")
+    parser.add_argument("--disable_bucket", action="store_true", help="禁用分桶 (所有图片必须相同尺寸)")
+    
     # SPDA (Sequence Parallel DataLoader Adapter) 参数
     parser.add_argument("--spda_enabled", action="store_true", help="启用SPDA功能")
     parser.add_argument("--sequence_parallel", action="store_true", default=True, help="启用序列并行优化")
