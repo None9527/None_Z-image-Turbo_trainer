@@ -526,27 +526,32 @@ def run_tagging_subprocess(dataset_path: str, ollama_url: str, model: str, promp
             if not line:
                 continue
             
-            print(f"[Tagging] {line}")
+            print(f"[Tagging] {line}", flush=True)
             
-            # 解析进度
+            # 解析进度 - Progress: x/y
             match = progress_pattern.search(line)
             if match:
                 completed = int(match.group(1))
                 total = int(match.group(2))
                 tagging_state["completed"] = completed
                 tagging_state["total"] = total
+                continue
             
-            # 解析当前文件
-            if "处理" in line and ":" in line:
-                parts = line.split(":")
-                if len(parts) >= 2:
-                    tagging_state["current_file"] = parts[-1].strip()
+            # 解析当前文件 - [FILE] filename.jpg
+            if line.startswith("[FILE]"):
+                filename = line[6:].strip()
+                tagging_state["current_file"] = filename
+                continue
             
-            # 解析错误
-            if "❌" in line or "失败" in line:
-                if "跳过:" in line:
-                    filename = line.split("跳过:")[-1].strip()
-                    tagging_state["errors"].append(filename)
+            # 解析成功 - [OK] filename.jpg  
+            if line.startswith("[OK]"):
+                continue
+            
+            # 解析失败 - [FAIL] filename.jpg
+            if line.startswith("[FAIL]"):
+                filename = line[6:].strip()
+                tagging_state["errors"].append(filename)
+                continue
         
         process.wait()
         

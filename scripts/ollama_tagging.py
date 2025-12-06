@@ -254,7 +254,9 @@ def main():
     fail_count = 0
     
     for i, img_path in enumerate(image_paths):
-        logger.info(f"处理 ({i+1}/{total}): {img_path.name}")
+        # 输出当前文件（用于前端显示）
+        print(f"[FILE] {img_path.name}", flush=True)
+        sys.stdout.flush()
         
         caption = generate_caption(
             img_path,
@@ -270,12 +272,14 @@ def main():
         if caption:
             save_caption(img_path, caption, args.trigger_word)
             success_count += 1
-            logger.info(f"✅ {img_path.name}: {caption[:50]}...")
+            print(f"[OK] {img_path.name}", flush=True)
         else:
             fail_count += 1
-            logger.warning(f"❌ 跳过: {img_path.name}")
+            print(f"[FAIL] {img_path.name}", flush=True)
         
+        # 输出进度（用于前端解析）
         print(f"Progress: {i+1}/{total}", flush=True)
+        sys.stdout.flush()
         
         if args.delay > 0 and i < total - 1:
             time.sleep(args.delay)
