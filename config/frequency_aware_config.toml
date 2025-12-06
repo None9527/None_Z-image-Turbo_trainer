@@ -1,0 +1,149 @@
+# Z-Image Frequency-Aware 训练配置文件
+# ==========================================
+# 基于频域分离的解耦学习策略
+# 
+# 核心优势：
+# - 高频增强：L1 Loss 强化纹理/边缘细节，画面更锐利
+# - 低频锁定：Cosine Loss 锁定结构/光影，防止色偏和风格漂移
+# - 解决"顾此失彼"问题：提升细节的同时不破坏整体风格
+#
+# 适用于 scripts/train_frequency_aware.py
+
+[model]
+# Transformer 模型路径
+dit = "/path/to/transformer"
+
+# 输出目录
+output_dir = "output/freq_aware_v1"
+
+# 输出文件名前缀
+output_name = "zimage-freq-lora"
+
+[acrf]
+# Turbo 步数
+turbo_steps = 10
+
+# 时间步 Shift 参数
+shift = 3.0
+
+# 锚点抖动幅度
+jitter_scale = 0.02
+
+[lora]
+# LoRA Rank
+network_dim = 16
+
+# LoRA Alpha
+network_alpha = 16
+
+[frequency_loss]
+# ==========================================
+# 频域感知 Loss 配置
+# ==========================================
+
+# 高频增强权重 (推荐 0.5~1.0)
+# - 越大 = 细节/纹理学习越强
+# - 太大可能导致噪点
+alpha_hf = 1.0
+
+# 低频锁定权重 (推荐 0.1~0.2)
+# - 越大 = 结构/光影锁定越强
+# - 防止色偏和风格漂移
+beta_lf = 0.2
+
+# 基础 Loss 权重
+# - 保证模型收敛的基础项
+base_weight = 1.0
+
+# 低频提取降采样因子
+# - 4 = 降 4 倍提取低频（推荐）
+# - 8 = 更激进的低频分离
+downsample_factor = 4
+
+# 低频幅度约束权重 (防止发灰)
+# - 0 = 只锁方向不锁幅度
+# - 0.05~0.1 = 轻度约束幅度
+lf_magnitude_weight = 0.0
+
+# 是否使用自适应频域 Loss
+# - true = 训练初期侧重低频，后期侧重高频
+# - false = 固定权重
+adaptive_loss = false
+
+[training]
+# 优化器类型
+optimizer_type = "AdamW8bit"
+
+# 学习率
+learning_rate = 5e-5
+
+# 权重衰减
+weight_decay = 0.01
+
+# 学习率调度器
+lr_scheduler = "cosine"
+lr_warmup_steps = 50
+lr_num_cycles = 1
+
+# Min-SNR 加权 (与频域 Loss 配合)
+snr_gamma = 5.0
+
+# 训练 Epoch 数
+num_train_epochs = 10
+
+# 保存间隔
+save_every_n_epochs = 1
+
+# 梯度累积
+gradient_accumulation_steps = 2
+
+# 随机种子
+seed = 42
+
+[advanced]
+# 梯度裁剪
+max_grad_norm = 1.0
+
+# 梯度检查点
+gradient_checkpointing = true
+
+# 混合精度
+mixed_precision = "bf16"
+
+# ============ Dataset 配置 ============
+[dataset]
+batch_size = 1
+shuffle = true
+enable_bucket = true
+
+[[dataset.sources]]
+cache_directory = "/path/to/your/dataset/cache"
+num_repeats = 10
+resolution_limit = 1024
+
+# ==========================================
+# 使用方法
+# ==========================================
+#
+# 1. 修改 dit 和 cache_directory 路径
+#
+# 2. 根据需求调整频域 Loss 权重：
+#
+#    场景 A：提升清晰度，保持风格
+#    alpha_hf = 1.0   # 强化高频
+#    beta_lf = 0.2    # 轻锁低频
+#
+#    场景 B：学习新风格，允许色调变化
+#    alpha_hf = 0.5   # 中等高频
+#    beta_lf = 0.1    # 弱锁低频
+#
+#    场景 C：精准复刻，严格保持原图风格
+#    alpha_hf = 0.8   # 中高频
+#    beta_lf = 0.5    # 强锁低频
+#    lf_magnitude_weight = 0.05  # 防止发灰
+#
+# 3. 运行训练：
+#    python scripts/train_frequency_aware.py --config config/frequency_aware_config.toml
+#
+# ==========================================
+
