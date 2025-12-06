@@ -523,9 +523,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { Setting, Refresh, Check, FolderOpened, DataAnalysis, Grid, TrendCharts, Files, Tools, Plus, Delete, Document, InfoFilled, QuestionFilled } from '@element-plus/icons-vue'
+import { useRoute } from 'vue-router'
+import { Setting, Refresh, Check, FolderOpened, DataAnalysis, Grid, TrendCharts, Files, Tools, Plus, Delete, Document, InfoFilled, QuestionFilled, Promotion } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
+
+const route = useRoute()
 
 const activeNames = ref(['acrf', 'lora', 'training', 'dataset', 'advanced'])
 const loading = ref(false)
@@ -613,7 +616,16 @@ const config = ref(getDefaultConfig())
 
 onMounted(async () => {
   await loadConfigList()
-  await loadConfig('default')
+  
+  // 检查 URL 参数，如果有 edit 参数则加载对应配置
+  const editConfig = route.query.edit as string
+  if (editConfig && editConfig !== 'default') {
+    await loadConfig(editConfig)
+    ElMessage.info(`正在编辑配置: ${editConfig}`)
+  } else {
+    await loadConfig('default')
+  }
+  
   await loadPresets()
   await loadCachedDatasets()
 })

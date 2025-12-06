@@ -64,10 +64,10 @@
       <div class="preview-header">
         <h3>训练配置预览</h3>
         <span class="config-name-badge">{{ currentConfig.name }}</span>
-        <router-link to="/config" class="edit-link">
+        <span class="edit-link" @click="goToEditConfig">
           <el-icon><Edit /></el-icon>
           编辑
-        </router-link>
+        </span>
       </div>
       
       <!-- AC-RF 参数 -->
@@ -332,6 +332,12 @@ async function loadCurrentConfig() {
   } catch (e) {
     console.error('Failed to load current config:', e)
   }
+}
+
+// 跳转到配置页面编辑当前配置
+function goToEditConfig() {
+  const configName = currentConfig.value?.name || 'default'
+  router.push({ path: '/config', query: { edit: configName } })
 }
 
 const statusClass = computed(() => ({
