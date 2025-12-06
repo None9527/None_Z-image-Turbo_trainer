@@ -448,8 +448,14 @@ async def get_ollama_models(ollama_url: str = "http://localhost:11434"):
 
 @router.get("/ollama/status")
 async def get_tagging_status():
-    """获取标注进度"""
-    return tagging_state
+    """获取标注进度（排除 process 对象，它无法 JSON 序列化）"""
+    return {
+        "running": tagging_state.get("running", False),
+        "total": tagging_state.get("total", 0),
+        "completed": tagging_state.get("completed", 0),
+        "current_file": tagging_state.get("current_file", ""),
+        "errors": tagging_state.get("errors", [])
+    }
 
 @router.post("/ollama/stop")
 async def stop_tagging():
