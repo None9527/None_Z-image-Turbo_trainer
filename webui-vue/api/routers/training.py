@@ -43,9 +43,20 @@ def get_default_config():
             "lr_scheduler": "cosine_with_restarts",
             "lr_warmup_steps": 100,
             "lr_num_cycles": 1,
+            # Standard 模式参数
             "lambda_fft": 0,
             "lambda_cosine": 0,
-            "snr_gamma": 5.0
+            "snr_gamma": 5.0,
+            # 损失模式
+            "loss_mode": "standard",
+            # 频域感知参数
+            "alpha_hf": 1.0,
+            "beta_lf": 0.2,
+            # 风格结构参数
+            "lambda_struct": 1.0,
+            "lambda_light": 0.5,
+            "lambda_color": 0.3,
+            "lambda_tex": 0.5
         },
         "dataset": {
             "batch_size": 1,
@@ -450,9 +461,20 @@ def generate_acrf_toml_config(config: Dict[str, Any]) -> str:
         f'lr_scheduler = "{config.get("training", {}).get("lr_scheduler", "constant")}"',
         f"lr_warmup_steps = {config.get('training', {}).get('lr_warmup_steps', 0)}",
         f"lr_num_cycles = {config.get('training', {}).get('lr_num_cycles', 1)}",
-        f"lambda_fft = {config.get('training', {}).get('lambda_fft', 0.1)}",
-        f"lambda_cosine = {config.get('training', {}).get('lambda_cosine', 0.1)}",
+        # Standard 模式参数
+        f"lambda_fft = {config.get('training', {}).get('lambda_fft', 0)}",
+        f"lambda_cosine = {config.get('training', {}).get('lambda_cosine', 0)}",
         f"snr_gamma = {config.get('training', {}).get('snr_gamma', 5.0)}",
+        # 损失模式
+        f'loss_mode = "{config.get("training", {}).get("loss_mode", "standard")}"',
+        # 频域感知参数
+        f"alpha_hf = {config.get('training', {}).get('alpha_hf', 1.0)}",
+        f"beta_lf = {config.get('training', {}).get('beta_lf', 0.2)}",
+        # 风格结构参数
+        f"lambda_struct = {config.get('training', {}).get('lambda_struct', 1.0)}",
+        f"lambda_light = {config.get('training', {}).get('lambda_light', 0.5)}",
+        f"lambda_color = {config.get('training', {}).get('lambda_color', 0.3)}",
+        f"lambda_tex = {config.get('training', {}).get('lambda_tex', 0.5)}",
         f"num_train_epochs = {config.get('advanced', {}).get('num_train_epochs', 10)}",
         f"save_every_n_epochs = {config.get('advanced', {}).get('save_every_n_epochs', 1)}",
         f"gradient_accumulation_steps = {config.get('advanced', {}).get('gradient_accumulation_steps', 4)}",

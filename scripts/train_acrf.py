@@ -28,6 +28,7 @@ from zimage_trainer.networks.lora import LoRANetwork
 from zimage_trainer.dataset.dataloader import create_dataloader
 from zimage_trainer.utils.memory_optimizer import MemoryOptimizer
 from zimage_trainer.utils.hardware_detector import HardwareDetector
+from zimage_trainer.losses import FrequencyAwareLoss, LatentStyleStructureLoss
 
 import logging
 logging.basicConfig(
@@ -78,6 +79,23 @@ def parse_args():
     parser.add_argument("--lambda_fft", type=float, default=0.1, help="FFT Loss 权重")
     parser.add_argument("--lambda_cosine", type=float, default=0.1, help="Cosine Loss 权重")
     parser.add_argument("--snr_gamma", type=float, default=5.0, help="Min-SNR gamma (0=禁用, 推荐5.0)")
+    
+    # 损失模式参数
+    parser.add_argument("--loss_mode", type=str, default="standard",
+        choices=["standard", "frequency", "style", "unified"],
+        help="损失模式: standard=基础MSE, frequency=频域感知, style=风格结构, unified=统一模式")
+    
+    # 频域感知 Loss 参数 (loss_mode=frequency 或 unified)
+    parser.add_argument("--alpha_hf", type=float, default=1.0, help="高频增强权重 (频域模式)")
+    parser.add_argument("--beta_lf", type=float, default=0.2, help="低频锁定权重 (频域模式)")
+    parser.add_argument("--lf_magnitude_weight", type=float, default=0.0, help="低频幅度约束 (防止发灰)")
+    parser.add_argument("--downsample_factor", type=int, default=4, help="低频提取降采样因子")
+    
+    # 风格结构 Loss 参数 (loss_mode=style 或 unified)
+    parser.add_argument("--lambda_struct", type=float, default=1.0, help="结构锁权重 (SSIM)")
+    parser.add_argument("--lambda_light", type=float, default=0.5, help="光影学习权重 (L通道统计)")
+    parser.add_argument("--lambda_color", type=float, default=0.3, help="色调迁移权重 (ab通道统计)")
+    parser.add_argument("--lambda_tex", type=float, default=0.5, help="质感增强权重 (高频L1)")
     
     # 训练控制 (Epoch 模式)
     parser.add_argument("--num_train_epochs", type=int, default=10, help="训练 Epoch 数")
@@ -400,6 +418,33 @@ def main():
     )
     acrf_trainer.verify_setup()
     
+    # 3.5. 创建高级损失函数 (根据 loss_mode)
+    loss_mode = getattr(args, 'loss_mode', 'standard')
+    logger.info(f"\n[LOSS] 损失模式: {loss_mode}")
+    
+    frequency_loss_fn = None
+    style_loss_fn = None
+    
+    if loss_mode in ['frequency', 'unified']:
+        logger.info(f"  [频域感知] alpha_hf={args.alpha_hf}, beta_lf={args.beta_lf}")
+        frequency_loss_fn = FrequencyAwareLoss(
+            alpha_hf=args.alpha_hf,
+            beta_lf=args.beta_lf,
+            base_weight=1.0,
+            downsample_factor=args.downsample_factor,
+            lf_magnitude_weight=args.lf_magnitude_weight,
+        )
+    
+    if loss_mode in ['style', 'unified']:
+        logger.info(f"  [风格结构] struct={args.lambda_struct}, light={args.lambda_light}, color={args.lambda_color}, tex={args.lambda_tex}")
+        style_loss_fn = LatentStyleStructureLoss(
+            lambda_struct=args.lambda_struct,
+            lambda_light=args.lambda_light,
+            lambda_color=args.lambda_color,
+            lambda_tex=args.lambda_tex,
+            lambda_base=1.0,
+        )
+    
     # 4. 创建数据加载器
     logger.info("\n📊 加载数据集...")
     dataloader = create_dataloader(args)
@@ -528,17 +573,72 @@ def main():
                 # Z-Image 输出是负的
                 model_pred = -model_pred
                 
-                # 计算损失
-                loss = acrf_trainer.compute_loss(
-                    model_output=model_pred,
-                    target_velocity=target_velocity,
-                    latents_noisy=noisy_latents,
-                    timesteps=timesteps,
-                    target_x0=latents,  # 原始干净的 latents
-                    lambda_fft=args.lambda_fft,
-                    lambda_cosine=args.lambda_cosine,
-                    snr_gamma=args.snr_gamma,  # Min-SNR gamma (0=禁用)
-                )
+                # 根据损失模式计算损失
+                loss_components = {}
+                
+                if loss_mode == 'standard':
+                    # 标准模式：使用 AC-RF 原生损失
+                    loss = acrf_trainer.compute_loss(
+                        model_output=model_pred,
+                        target_velocity=target_velocity,
+                        latents_noisy=noisy_latents,
+                        timesteps=timesteps,
+                        target_x0=latents,
+                        lambda_fft=args.lambda_fft,
+                        lambda_cosine=args.lambda_cosine,
+                        snr_gamma=args.snr_gamma,
+                    )
+                    loss_components['base'] = loss.item()
+                    
+                elif loss_mode == 'frequency':
+                    # 频域感知模式
+                    loss, comps = frequency_loss_fn(
+                        pred_v=model_pred,
+                        target_v=target_velocity,
+                        noisy_latents=noisy_latents,
+                        timesteps=timesteps,
+                        num_train_timesteps=1000,
+                        return_components=True,
+                    )
+                    loss_components = {k: v.item() for k, v in comps.items()}
+                    
+                elif loss_mode == 'style':
+                    # 风格结构模式
+                    loss, comps = style_loss_fn(
+                        pred_v=model_pred,
+                        target_v=target_velocity,
+                        noisy_latents=noisy_latents,
+                        timesteps=timesteps,
+                        num_train_timesteps=1000,
+                        return_components=True,
+                    )
+                    loss_components = {k: v.item() for k, v in comps.items()}
+                    
+                elif loss_mode == 'unified':
+                    # 统一模式：组合频域和风格损失
+                    freq_loss, freq_comps = frequency_loss_fn(
+                        pred_v=model_pred,
+                        target_v=target_velocity,
+                        noisy_latents=noisy_latents,
+                        timesteps=timesteps,
+                        num_train_timesteps=1000,
+                        return_components=True,
+                    )
+                    style_loss, style_comps = style_loss_fn(
+                        pred_v=model_pred,
+                        target_v=target_velocity,
+                        noisy_latents=noisy_latents,
+                        timesteps=timesteps,
+                        num_train_timesteps=1000,
+                        return_components=True,
+                    )
+                    # 取两个 loss 的平均
+                    loss = (freq_loss + style_loss) / 2
+                    loss_components = {
+                        'freq': freq_loss.item(),
+                        'style': style_loss.item(),
+                        'total': loss.item(),
+                    }
                 
                 # 反向传播
                 accelerator.backward(loss)
@@ -567,8 +667,22 @@ def main():
                 # 获取当前学习率
                 current_lr = lr_scheduler.get_last_lr()[0]
                 
-                # 打印进度供前端解析（唯一的进度输出）
-                print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema_loss={ema_loss:.4f} lr={current_lr:.2e}", flush=True)
+                # 打印进度供前端解析（根据损失模式输出不同信息）
+                if loss_mode == 'standard':
+                    print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema_loss={ema_loss:.4f} lr={current_lr:.2e}", flush=True)
+                elif loss_mode == 'frequency':
+                    hf = loss_components.get('loss_hf', 0)
+                    lf = loss_components.get('loss_lf', 0)
+                    print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} hf={hf:.4f} lf={lf:.4f} lr={current_lr:.2e}", flush=True)
+                elif loss_mode == 'style':
+                    struct = loss_components.get('loss_struct', 0)
+                    light = loss_components.get('loss_light', 0)
+                    color = loss_components.get('loss_color', 0)
+                    print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} struct={struct:.4f} light={light:.4f} color={color:.4f} lr={current_lr:.2e}", flush=True)
+                elif loss_mode == 'unified':
+                    freq = loss_components.get('freq', 0)
+                    style = loss_components.get('style', 0)
+                    print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} freq={freq:.4f} style={style:.4f} lr={current_lr:.2e}", flush=True)
                 
             # 执行内存优化 (清理缓存等)
             memory_optimizer.optimize_training_step()
