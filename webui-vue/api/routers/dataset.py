@@ -455,8 +455,179 @@ async def get_tagging_status():
 @router.post("/ollama/stop")
 async def stop_tagging():
     """停止标注"""
+    global tagging_state
     tagging_state["running"] = False
+    # 终止子进程
+    if hasattr(tagging_state, 'process') and tagging_state.get('process'):
+        try:
+            tagging_state['process'].terminate()
+        except:
+            pass
     return {"success": True}
+
+
+def run_tagging_subprocess(dataset_path: str, ollama_url: str, model: str, prompt: str, 
+                           max_long_edge: int, trigger_word: str, enable_think: bool, skip_existing: bool):
+    """在子进程中运行标注脚本"""
+    global tagging_state
+    import subprocess
+    import sys
+    import re
+    import os
+    
+    # 构建命令
+    script_path = Path(__file__).parent.parent.parent.parent / "scripts" / "ollama_tagging.py"
+    
+    cmd = [
+        sys.executable, str(script_path),
+        "--input_dir", dataset_path,
+        "--ollama_url", ollama_url,
+        "--model", model,
+        "--prompt", prompt,
+        "--max_long_edge", str(max_long_edge),
+    ]
+    
+    if trigger_word:
+        cmd.extend(["--trigger_word", trigger_word])
+    if enable_think:
+        cmd.append("--enable_think")
+    if skip_existing:
+        cmd.append("--skip_existing")
+    
+    print(f"[Tagging] Starting: {' '.join(cmd[:6])}...")
+    
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    
+    try:
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            bufsize=1,
+            env=env,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        )
+        
+        tagging_state['process'] = process
+        
+        # 读取输出并解析进度
+        progress_pattern = re.compile(r'Progress:\s*(\d+)/(\d+)')
+        
+        for line in iter(process.stdout.readline, ''):
+            if not tagging_state["running"]:
+                process.terminate()
+                break
+            
+            line = line.strip()
+            if not line:
+                continue
+            
+            print(f"[Tagging] {line}")
+            
+            # 解析进度
+            match = progress_pattern.search(line)
+            if match:
+                completed = int(match.group(1))
+                total = int(match.group(2))
+                tagging_state["completed"] = completed
+                tagging_state["total"] = total
+            
+            # 解析当前文件
+            if "处理" in line and ":" in line:
+                parts = line.split(":")
+                if len(parts) >= 2:
+                    tagging_state["current_file"] = parts[-1].strip()
+            
+            # 解析错误
+            if "❌" in line or "失败" in line:
+                if "跳过:" in line:
+                    filename = line.split("跳过:")[-1].strip()
+                    tagging_state["errors"].append(filename)
+        
+        process.wait()
+        
+    except Exception as e:
+        print(f"[Tagging] Error: {e}")
+        tagging_state["errors"].append(str(e))
+    finally:
+        tagging_state["running"] = False
+        tagging_state["current_file"] = ""
+        tagging_state['process'] = None
+
+
+@router.post("/ollama/tag")
+async def start_tagging(request: OllamaTagRequest):
+    """开始批量标注（使用独立脚本）"""
+    global tagging_state
+    
+    if tagging_state["running"]:
+        raise HTTPException(status_code=400, detail="标注任务正在进行中")
+    
+    dataset_path = Path(request.dataset_path)
+    if not dataset_path.exists():
+        raise HTTPException(status_code=404, detail="数据集路径不存在")
+    
+    # 快速统计待标注图片数量
+    image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'}
+    image_count = 0
+    for ext in image_extensions:
+        for img_path in dataset_path.rglob(f"*{ext}"):
+            if request.skip_existing:
+                txt_path = img_path.with_suffix('.txt')
+                if txt_path.exists() and txt_path.stat().st_size > 0:
+                    continue
+            image_count += 1
+        for img_path in dataset_path.rglob(f"*{ext.upper()}"):
+            if request.skip_existing:
+                txt_path = img_path.with_suffix('.txt')
+                if txt_path.exists() and txt_path.stat().st_size > 0:
+                    continue
+            image_count += 1
+    
+    if image_count == 0:
+        return {"success": True, "message": "没有需要标注的图片", "total": 0}
+    
+    # 初始化状态
+    tagging_state = {
+        "running": True,
+        "total": image_count,
+        "completed": 0,
+        "current_file": "",
+        "errors": [],
+        "process": None
+    }
+    
+    # 启动后台线程运行子进程
+    thread = threading.Thread(
+        target=run_tagging_subprocess,
+        args=(
+            str(dataset_path),
+            request.ollama_url,
+            request.model,
+            request.prompt,
+            request.max_long_edge,
+            request.trigger_word,
+            request.enable_think,
+            request.skip_existing
+        ),
+        daemon=True
+    )
+    thread.start()
+    
+    return {
+        "success": True,
+        "message": f"开始标注 {image_count} 张图片",
+        "total": image_count
+    }
+
+
+# ============================================================================
+# 以下为旧版内联实现（已弃用，保留供参考）
+# ============================================================================
 
 def resize_image_for_api(img_path: Path, max_long_edge: int) -> bytes:
     """缩放图片长边到指定尺寸，返回 JPEG 字节（参照用户脚本使用 getvalue）"""
@@ -838,84 +1009,4 @@ async def delete_captions(request: DeleteCaptionsRequest):
         "errors": errors
     }
 
-def run_tagging_thread(image_paths: list, ollama_url: str, model: str, prompt: str, max_long_edge: int, trigger_word: str = "", enable_think: bool = False):
-    """在独立线程中执行标注任务"""
-    global tagging_state
-    
-    for img_path in image_paths:
-        if not tagging_state["running"]:
-            break
-        
-        tagging_state["current_file"] = img_path.name
-        
-        caption = generate_caption_ollama_sync(
-            img_path,
-            ollama_url,
-            model,
-            prompt,
-            max_long_edge,
-            enable_think
-        )
-        
-        if caption:
-            # 如果有触发词，添加到标注开头
-            if trigger_word.strip():
-                caption = f"{trigger_word.strip()}, {caption}"
-            txt_path = img_path.with_suffix('.txt')
-            txt_path.write_text(caption, encoding='utf-8')
-        else:
-            tagging_state["errors"].append(img_path.name)
-        
-        tagging_state["completed"] += 1
-    
-    tagging_state["running"] = False
-    tagging_state["current_file"] = ""
-
-@router.post("/ollama/tag")
-async def start_tagging(request: OllamaTagRequest):
-    """开始批量标注"""
-    global tagging_state
-    
-    if tagging_state["running"]:
-        raise HTTPException(status_code=400, detail="标注任务正在进行中")
-    
-    dataset_path = Path(request.dataset_path)
-    if not dataset_path.exists():
-        raise HTTPException(status_code=404, detail="数据集路径不存在")
-    
-    # 收集待标注图片
-    image_extensions = {'.jpg', '.jpeg', '.png', '.webp'}
-    image_paths = []
-    
-    for ext in image_extensions:
-        for img_path in dataset_path.rglob(f"*{ext}"):
-            txt_path = img_path.with_suffix('.txt')
-            if request.skip_existing and txt_path.exists():
-                continue
-            image_paths.append(img_path)
-    
-    if not image_paths:
-        return {"success": True, "message": "没有需要标注的图片", "total": 0}
-    
-    # 初始化状态
-    tagging_state = {
-        "running": True,
-        "total": len(image_paths),
-        "completed": 0,
-        "current_file": "",
-        "errors": []
-    }
-    
-    # 启动独立后台线程（不阻塞事件循环）
-    thread = threading.Thread(
-        target=run_tagging_thread,
-        args=(image_paths, request.ollama_url, request.model, request.prompt, request.max_long_edge, request.trigger_word, request.enable_think),
-        daemon=True
-    )
-    thread.start()
-    
-    return {
-        "success": True,
-        "message": f"开始标注 {len(image_paths)} 张图片",
-        "total": len(image_paths)
-    }
+# 旧版 run_tagging_thread 和 start_tagging 已删除，使用新的 run_tagging_subprocess 实现
