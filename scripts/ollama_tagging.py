@@ -168,15 +168,14 @@ def generate_caption(
         data = resp.json()
         caption = ""
         
-        # 提取响应
+        # 只使用 response 字段作为结果（thinking 是思考过程，不保存）
         if "response" in data and data["response"].strip():
             caption = data["response"].strip()
-        
-        # 如果 response 为空但有 thinking，使用完整的 thinking 内容
-        # qwen3-vl 等模型会把结果放在 thinking 字段
-        if not caption and "thinking" in data and data["thinking"]:
-            caption = data["thinking"].strip()
-            logger.info(f"使用 thinking 字段内容 ({len(caption)} chars)")
+        else:
+            # response 为空，检查是否有 thinking（说明模型在思考但没输出结果）
+            if "thinking" in data and data["thinking"]:
+                logger.warning(f"模型返回了 thinking 但 response 为空，请检查模型配置")
+            return None
         
         if not caption:
             logger.warning(f"空响应: {img_path.name}")
