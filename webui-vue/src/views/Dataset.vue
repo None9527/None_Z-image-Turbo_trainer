@@ -250,8 +250,15 @@
       </div>
     </div>
 
+    <!-- 加载中状态 -->
+    <div class="loading-state glass-card" v-else-if="datasetStore.isLoading">
+      <el-icon :size="64" class="is-loading"><Loading /></el-icon>
+      <h3>正在加载数据集...</h3>
+      <p>请稍候，正在扫描图片和缓存信息</p>
+    </div>
+
     <!-- 空状态 -->
-    <div class="empty-state glass-card" v-else-if="!datasetStore.isLoading">
+    <div class="empty-state glass-card" v-else>
       <el-icon :size="64"><FolderOpened /></el-icon>
       <h3>暂无图片</h3>
       <p>上传图片到数据集</p>
@@ -2136,6 +2143,42 @@ function formatSize(bytes: number): string {
       }
     }
   }
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--space-xl) * 3);
+  text-align: center;
+  min-height: 300px;
+  
+  .el-icon {
+    color: var(--el-color-primary);
+    margin-bottom: var(--space-lg);
+    font-size: 64px;
+  }
+  
+  .is-loading {
+    animation: rotate 1.5s linear infinite;
+  }
+  
+  h3 {
+    margin-bottom: var(--space-sm);
+    color: var(--text-primary);
+    font-size: 1.25rem;
+  }
+  
+  p {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .empty-state {
