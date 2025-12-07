@@ -1015,6 +1015,34 @@ async def resize_images(request: ResizeImagesRequest):
         "total": len(image_paths)
     }
 
+class SaveCaptionRequest(BaseModel):
+    path: str  # 图片路径
+    caption: str  # 标注内容
+
+@router.post("/caption")
+async def save_caption(request: SaveCaptionRequest):
+    """保存单张图片的标注"""
+    image_path = Path(request.path)
+    
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="图片文件不存在")
+    
+    # 标注文件与图片同名，扩展名为 .txt
+    caption_path = image_path.with_suffix('.txt')
+    
+    try:
+        # 如果标注内容为空，删除标注文件
+        if not request.caption.strip():
+            if caption_path.exists():
+                caption_path.unlink()
+            return {"success": True, "message": "标注已删除"}
+        
+        # 保存标注
+        caption_path.write_text(request.caption.strip(), encoding='utf-8')
+        return {"success": True, "message": "标注已保存"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"保存失败: {str(e)}")
+
 class DeleteCaptionsRequest(BaseModel):
     dataset_path: str
 
