@@ -27,7 +27,10 @@ def get_default_config():
         "acrf": {
             "turbo_steps": 10,
             "shift": 3.0,
-            "jitter_scale": 0.02
+            "jitter_scale": 0.02,
+            # Min-SNR 加权参数（所有 loss 模式通用）
+            "snr_gamma": 5.0,
+            "snr_floor": 0.1
         },
         "network": {
             "dim": 16,
@@ -46,7 +49,6 @@ def get_default_config():
             # Standard 模式参数
             "lambda_fft": 0,
             "lambda_cosine": 0,
-            "snr_gamma": 5.0,
             # 损失模式
             "loss_mode": "standard",
             # 频域感知参数
@@ -448,6 +450,8 @@ def generate_acrf_toml_config(config: Dict[str, Any]) -> str:
         f"turbo_steps = {config.get('acrf', {}).get('turbo_steps', 10)}",
         f"shift = {config.get('acrf', {}).get('shift', 3.0)}",
         f"jitter_scale = {config.get('acrf', {}).get('jitter_scale', 0.02)}",
+        f"snr_gamma = {config.get('acrf', {}).get('snr_gamma', 5.0)}",
+        f"snr_floor = {config.get('acrf', {}).get('snr_floor', 0.1)}",
         "",
         "[lora]",
         f"network_dim = {config.get('network', {}).get('dim', 8)}",
@@ -464,7 +468,6 @@ def generate_acrf_toml_config(config: Dict[str, Any]) -> str:
         # Standard 模式参数
         f"lambda_fft = {config.get('training', {}).get('lambda_fft', 0)}",
         f"lambda_cosine = {config.get('training', {}).get('lambda_cosine', 0)}",
-        f"snr_gamma = {config.get('training', {}).get('snr_gamma', 5.0)}",
         # 损失模式
         f'loss_mode = "{config.get("training", {}).get("loss_mode", "standard")}"',
         # 频域感知参数

@@ -86,6 +86,14 @@
             <span class="label">Jitter Scale</span>
             <span class="value">{{ currentConfig.acrf?.jitter_scale ?? 0.02 }}</span>
           </div>
+          <div class="preview-item">
+            <span class="label">SNR Gamma</span>
+            <span class="value">{{ currentConfig.acrf?.snr_gamma ?? 5.0 }}</span>
+          </div>
+          <div class="preview-item">
+            <span class="label">SNR Floor</span>
+            <span class="value">{{ currentConfig.acrf?.snr_floor ?? 0.1 }}</span>
+          </div>
         </div>
       </div>
       

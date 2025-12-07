@@ -28,6 +28,7 @@ from zimage_trainer.networks.lora import LoRANetwork
 from zimage_trainer.dataset.dataloader import create_dataloader
 from zimage_trainer.utils.memory_optimizer import MemoryOptimizer
 from zimage_trainer.utils.hardware_detector import HardwareDetector
+from zimage_trainer.utils.snr_utils import compute_snr_weights, print_anchor_snr_weights
 from zimage_trainer.losses import FrequencyAwareLoss, LatentStyleStructureLoss
 
 import logging
@@ -78,7 +79,10 @@ def parse_args():
     
     parser.add_argument("--lambda_fft", type=float, default=0.1, help="FFT Loss 权重")
     parser.add_argument("--lambda_cosine", type=float, default=0.1, help="Cosine Loss 权重")
+    
+    # Min-SNR 加权参数（统一应用于所有 loss 模式）
     parser.add_argument("--snr_gamma", type=float, default=5.0, help="Min-SNR gamma (0=禁用, 推荐5.0)")
+    parser.add_argument("--snr_floor", type=float, default=0.1, help="Min-SNR 保底权重 (10步模型关键参数，推荐0.1)")
     
     # 损失模式参数
     parser.add_argument("--loss_mode", type=str, default="standard",
@@ -422,7 +426,19 @@ def main():
     )
     acrf_trainer.verify_setup()
     
-    # 3.5. 创建高级损失函数 (根据 loss_mode)
+    # 3.5. 打印 Min-SNR 配置和锚点权重分布
+    snr_gamma = getattr(args, 'snr_gamma', 5.0)
+    snr_floor = getattr(args, 'snr_floor', 0.1)
+    logger.info(f"\n[SNR] Min-SNR 配置: gamma={snr_gamma}, floor={snr_floor}")
+    if snr_gamma > 0:
+        print_anchor_snr_weights(
+            turbo_steps=args.turbo_steps,
+            shift=args.shift,
+            snr_gamma=snr_gamma,
+            snr_floor=snr_floor,
+        )
+    
+    # 3.6. 创建高级损失函数 (根据 loss_mode)
     loss_mode = getattr(args, 'loss_mode', 'standard')
     logger.info(f"\n[LOSS] 损失模式: {loss_mode}")
     
@@ -580,8 +596,20 @@ def main():
                 # 根据损失模式计算损失
                 loss_components = {}
                 
+                # 计算 Min-SNR 权重（统一应用于所有 loss 模式）
+                if snr_gamma > 0:
+                    snr_weights = compute_snr_weights(
+                        timesteps=timesteps,
+                        num_train_timesteps=1000,
+                        snr_gamma=snr_gamma,
+                        snr_floor=snr_floor,
+                        prediction_type="v_prediction",
+                    ).to(model_pred.device, dtype=torch.float32)
+                else:
+                    snr_weights = None
+                
                 if loss_mode == 'standard':
-                    # 标准模式：使用 AC-RF 原生损失
+                    # 标准模式：使用 AC-RF 原生损失（内部也会应用 SNR 加权）
                     loss = acrf_trainer.compute_loss(
                         model_output=model_pred,
                         target_velocity=target_velocity,
@@ -590,7 +618,8 @@ def main():
                         target_x0=latents,
                         lambda_fft=args.lambda_fft,
                         lambda_cosine=args.lambda_cosine,
-                        snr_gamma=args.snr_gamma,
+                        snr_gamma=snr_gamma,
+                        snr_floor=snr_floor,
                     )
                     loss_components['base'] = loss.item()
                     
@@ -604,6 +633,9 @@ def main():
                         num_train_timesteps=1000,
                         return_components=True,
                     )
+                    # 应用 Min-SNR 加权
+                    if snr_weights is not None:
+                        loss = loss * snr_weights.mean()
                     loss_components = {k: v.item() for k, v in comps.items()}
                     
                 elif loss_mode == 'style':
@@ -616,6 +648,9 @@ def main():
                         num_train_timesteps=1000,
                         return_components=True,
                     )
+                    # 应用 Min-SNR 加权
+                    if snr_weights is not None:
+                        loss = loss * snr_weights.mean()
                     loss_components = {k: v.item() for k, v in comps.items()}
                     
                 elif loss_mode == 'unified':
@@ -638,6 +673,9 @@ def main():
                     )
                     # 取两个 loss 的平均
                     loss = (freq_loss + style_loss) / 2
+                    # 应用 Min-SNR 加权
+                    if snr_weights is not None:
+                        loss = loss * snr_weights.mean()
                     loss_components = {
                         'freq': freq_loss.item(),
                         'style': style_loss.item(),

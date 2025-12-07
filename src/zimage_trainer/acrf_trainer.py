@@ -164,9 +164,10 @@ class ACRFTrainer:
         lambda_cosine: float = 0.1,
         lambda_fft: float = 0.1,
         snr_gamma: float = 5.0,  # Min-SNR 加权参数，0 表示禁用
+        snr_floor: float = 0.1,  # Min-SNR 保底权重（10步模型关键参数）
     ) -> torch.Tensor:
         """
-        计算 AC-RF 损失 (带 Min-SNR 加权)
+        计算 AC-RF 损失 (带 Floored Min-SNR 加权)
         
         Args:
             model_output: 模型预测的速度 v_pred
@@ -178,16 +179,25 @@ class ACRFTrainer:
             lambda_cosine: Cosine Loss 权重
             lambda_fft: FFT Loss 权重
             snr_gamma: Min-SNR gamma 参数 (推荐 5.0)，设为 0 禁用
+            snr_floor: Min-SNR 保底权重 (推荐 0.1)，确保高噪区参与训练
         """
-        # 计算 Min-SNR 权重 (减少不同 sigma 下的 loss 波动)
-        # SNR = (1-sigma)^2 / sigma^2，Min-SNR weight = min(SNR, gamma) / SNR
+        # 计算 Floored Min-SNR 权重
+        # 标准 Min-SNR 在高噪区权重过低，导致 10 步模型无法学习构图
+        # Floored Min-SNR 增加保底权重，确保每一步都参与训练
         if snr_gamma > 0:
-            sigmas = timesteps / self.num_train_timesteps
-            # 避免 sigma=1 时 SNR=0 导致权重为 0
-            sigmas_clamped = sigmas.clamp(min=0.01, max=0.99)
+            sigmas = timesteps.float() / self.num_train_timesteps
+            sigmas_clamped = sigmas.clamp(min=0.001, max=0.999)
             snr = ((1 - sigmas_clamped) / sigmas_clamped) ** 2
-            snr_weight = torch.clamp(snr, max=snr_gamma) / snr.clamp(min=0.01)
-            snr_weight = snr_weight.view(-1, 1, 1, 1).clamp(min=0.1, max=1.0)  # 限制权重范围
+            
+            # v-prediction: weight = min(SNR, γ) / (SNR + 1)
+            clipped_snr = torch.clamp(snr, max=snr_gamma)
+            snr_weight = clipped_snr / (snr + 1)
+            
+            # Floored Min-SNR: 增加保底权重
+            if snr_floor > 0:
+                snr_weight = torch.maximum(snr_weight, torch.tensor(snr_floor, device=snr_weight.device))
+            
+            snr_weight = snr_weight.view(-1, 1, 1, 1)
         else:
             snr_weight = 1.0
         

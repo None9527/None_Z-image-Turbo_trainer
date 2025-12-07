@@ -388,6 +388,29 @@
               </el-select>
             </div>
             
+            <!-- Min-SNR 加权参数（所有 loss 模式通用） -->
+            <div class="subsection-label">Min-SNR 加权 (适用于所有模式)</div>
+            <div class="control-row">
+              <span class="label">
+                SNR Gamma
+                <el-tooltip content="Min-SNR 截断值，防止低噪区过拟合细节，0=禁用，推荐 5.0" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-slider v-model="config.acrf.snr_gamma" :min="0" :max="10" :step="0.5" :show-tooltip="false" class="slider-flex" />
+              <el-input-number v-model="config.acrf.snr_gamma" :min="0" :max="10" :step="0.5" controls-position="right" class="input-fixed" />
+            </div>
+            <div class="control-row">
+              <span class="label">
+                SNR Floor
+                <el-tooltip content="保底权重，确保高噪区（构图阶段）参与训练。10步模型关键参数，推荐 0.1" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-slider v-model="config.acrf.snr_floor" :min="0" :max="0.5" :step="0.01" :show-tooltip="false" class="slider-flex" />
+              <el-input-number v-model="config.acrf.snr_floor" :min="0" :max="0.5" :step="0.01" controls-position="right" class="input-fixed" />
+            </div>
+            
             <!-- Standard 模式参数 -->
             <template v-if="config.training.loss_mode === 'standard'">
               <div class="subsection-label">混合损失函数 (HYBRID LOSS)</div>
@@ -410,16 +433,6 @@
                 </span>
                 <el-slider v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.01" :show-tooltip="false" class="slider-flex" />
                 <el-input-number v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.01" controls-position="right" class="input-fixed" />
-              </div>
-              <div class="control-row">
-                <span class="label">
-                  Min-SNR Gamma
-                  <el-tooltip content="信噪比加权，减少不同时间步 loss 波动，0=禁用，推荐5" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-slider v-model="config.training.snr_gamma" :min="0" :max="10" :step="0.5" :show-tooltip="false" class="slider-flex" />
-                <el-input-number v-model="config.training.snr_gamma" :min="0" :max="10" :step="0.5" controls-position="right" class="input-fixed" />
               </div>
             </template>
             
@@ -561,7 +574,10 @@ function getDefaultConfig() {
     acrf: {
       turbo_steps: 10,
       shift: 3.0,
-      jitter_scale: 0.02
+      jitter_scale: 0.02,
+      // Min-SNR 加权参数（所有 loss 模式通用）
+      snr_gamma: 5.0,
+      snr_floor: 0.1
     },
     network: {
       dim: 8,
@@ -582,7 +598,6 @@ function getDefaultConfig() {
       // Standard 模式参数
       lambda_fft: 0,
       lambda_cosine: 0,
-      snr_gamma: 5.0,
       // 损失模式
       loss_mode: 'standard',
       // 频域感知参数
