@@ -329,7 +329,37 @@ import { useWebSocketStore } from '@/stores/websocket'
 
 const wsStore = useWebSocketStore()
 
-const params = ref({
+// localStorage keys
+const STORAGE_KEY_PARAMS = 'generation_params'
+const STORAGE_KEY_RESULT = 'generation_result'
+
+// 从 localStorage 加载保存的参数
+const loadSavedParams = () => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_PARAMS)
+    if (saved) {
+      return JSON.parse(saved)
+    }
+  } catch (e) {
+    console.warn('Failed to load saved params:', e)
+  }
+  return null
+}
+
+// 从 localStorage 加载保存的结果
+const loadSavedResult = () => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_RESULT)
+    if (saved) {
+      return JSON.parse(saved)
+    }
+  } catch (e) {
+    console.warn('Failed to load saved result:', e)
+  }
+  return null
+}
+
+const defaultParams = {
   prompt: "A futuristic city with flying cars, cyberpunk style, highly detailed, 8k",
   negative_prompt: "",
   steps: 9,
@@ -340,11 +370,24 @@ const params = ref({
   lora_path: null as string | null,
   lora_scale: 1.0,
   comparison_mode: false
-})
+}
+
+const savedParams = loadSavedParams()
+const params = ref(savedParams ? { ...defaultParams, ...savedParams } : { ...defaultParams })
 
 const generating = ref(false)
-const resultImage = ref<string | null>(null)
-const resultSeed = ref<number | null>(null)
+const savedResult = loadSavedResult()
+const resultImage = ref<string | null>(savedResult?.image || null)
+const resultSeed = ref<number | null>(savedResult?.seed || null)
+
+// 监听参数变化，自动保存到 localStorage
+watch(params, (newParams) => {
+  try {
+    localStorage.setItem(STORAGE_KEY_PARAMS, JSON.stringify(newParams))
+  } catch (e) {
+    console.warn('Failed to save params:', e)
+  }
+}, { deep: true })
 
 
 // History state
@@ -426,6 +469,15 @@ const generateImage = async () => {
     if (res.data.success) {
       resultImage.value = res.data.image
       resultSeed.value = res.data.seed
+      // 保存结果到 localStorage
+      try {
+        localStorage.setItem(STORAGE_KEY_RESULT, JSON.stringify({
+          image: res.data.image,
+          seed: res.data.seed
+        }))
+      } catch (e) {
+        console.warn('Failed to save result:', e)
+      }
       ElMessage.success('生成成功！')
       fetchHistory()
       resetZoom('main')
