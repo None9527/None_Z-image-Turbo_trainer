@@ -603,57 +603,107 @@ async def get_model_status(model_type: str = "zimage"):
             "model_type": model_type
         }
 
-@router.post("/verify-from-modelscope")
-async def verify_from_modelscope():
-    """从 ModelScope 在线校验模型完整性"""
+@router.post("/verify-model")
+async def verify_model_integrity(model_type: str = "zimage"):
+    """使用 ModelScope API 校验模型完整性（hash 校验）"""
+    import hashlib
+    
     try:
-        model_path = Path(MODEL_PATH)
+        if model_type not in MODEL_SPECS:
+            model_type = "zimage"
         
-        # 尝试获取 ModelScope 文件列表
-        ms_info = get_modelscope_file_list()
+        spec = MODEL_SPECS[model_type]
+        model_id = spec.get("model_id")
+        model_path = get_model_path(model_type, "base")
         
-        if not ms_info.get("success"):
+        if not model_id:
+            return {"success": False, "error": "该模型不支持在线校验"}
+        
+        # 获取 ModelScope 文件列表
+        try:
+            from modelscope.hub.api import HubApi
+            api = HubApi()
+            remote_files = api.get_model_files(model_id)
+        except Exception as e:
             return {
                 "success": False,
-                "error": f"无法连接 ModelScope: {ms_info.get('error')}",
-                "offline_check": await get_model_status()
+                "error": f"无法连接 ModelScope: {str(e)}",
+                "offline_check": await get_model_status(model_type)
             }
         
-        remote_files = ms_info.get("files", [])
+        # 解析远程文件信息
+        remote_info = {}
+        for file_info in remote_files:
+            if isinstance(file_info, dict):
+                name = file_info.get('Name') or file_info.get('Path', '')
+                sha256 = file_info.get('Sha256', '')
+                size = file_info.get('Size', 0)
+                remote_info[name] = {'sha256': sha256, 'size': size}
         
-        # 比对本地文件
-        local_files = []
+        # 校验本地文件
+        valid_files = []
+        invalid_files = []
         missing_files = []
-        size_mismatch = []
         
-        for remote_file in remote_files:
-            file_name = remote_file.get("Name", remote_file.get("name", ""))
-            remote_size = remote_file.get("Size", remote_file.get("size", 0))
+        for rel_path, info in remote_info.items():
+            local_path = model_path / rel_path
+            expected_sha256 = info.get('sha256', '')
+            expected_size = info.get('size', 0)
             
-            local_path = model_path / file_name
+            if not local_path.exists():
+                missing_files.append(rel_path)
+                continue
             
-            if local_path.exists():
-                local_size = local_path.stat().st_size
-                local_files.append({
-                    "name": file_name,
-                    "local_size": local_size,
-                    "remote_size": remote_size,
-                    "match": abs(local_size - remote_size) < 1024  # 允许1KB误差
+            local_size = local_path.stat().st_size
+            
+            # 大小检查
+            if expected_size > 0 and local_size != expected_size:
+                invalid_files.append({
+                    "path": rel_path,
+                    "reason": f"大小不匹配 ({local_size} vs {expected_size})"
                 })
+                continue
+            
+            # Hash 校验（只对大文件进行，小文件用大小检查即可）
+            if expected_sha256 and expected_size > 10 * 1024 * 1024:  # > 10MB
+                sha256 = hashlib.sha256()
+                with open(local_path, 'rb') as f:
+                    for chunk in iter(lambda: f.read(8192), b''):
+                        sha256.update(chunk)
+                local_sha256 = sha256.hexdigest()
                 
-                if abs(local_size - remote_size) >= 1024:
-                    size_mismatch.append(file_name)
-            else:
-                missing_files.append(file_name)
+                if local_sha256.lower() != expected_sha256.lower():
+                    invalid_files.append({
+                        "path": rel_path,
+                        "reason": "Hash 不匹配"
+                    })
+                    continue
+            
+            valid_files.append(rel_path)
+        
+        is_complete = len(missing_files) == 0 and len(invalid_files) == 0
         
         return {
             "success": True,
-            "model_id": MODELSCOPE_MODEL_ID,
-            "total_remote_files": len(remote_files),
-            "local_files": len(local_files),
+            "model_type": model_type,
+            "model_name": spec["name"],
+            "model_id": model_id,
+            "total_files": len(remote_info),
+            "valid_files": len(valid_files),
+            "invalid_files": invalid_files,
             "missing_files": missing_files,
-            "size_mismatch": size_mismatch,
-            "is_complete": len(missing_files) == 0 and len(size_mismatch) == 0
+            "is_complete": is_complete
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/verify-from-modelscope")
+async def verify_from_modelscope():
+    """从 ModelScope 在线校验模型完整性（旧版兼容）"""
+    return await verify_model_integrity("zimage")
         }
         
     except Exception as e:
