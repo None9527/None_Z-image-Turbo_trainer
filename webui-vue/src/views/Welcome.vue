@@ -200,7 +200,7 @@
           <span>检测中...</span>
         </div>
 
-        <!-- 下载按钮：完全缺失或部分缺失时显示（且没有其他下载进行中） -->
+        <!-- 下载按钮：完全缺失或部分缺失时显示（且没有下载进行中） -->
         <el-button 
           v-if="needsDownload && !isDownloading" 
           type="primary" 
@@ -212,18 +212,8 @@
           {{ downloadButtonText }}
         </el-button>
         
-        <!-- 其他模型正在下载的提示 -->
-        <el-alert
-          v-if="isDownloading && downloadingModelType !== selectedModelType"
-          type="info"
-          :closable="false"
-          show-icon
-        >
-          {{ downloadingModelName }} 正在下载中...
-        </el-alert>
-        
-        <!-- 下载进度（总进度）：只在当前选择的模型正在下载时显示 -->
-        <div v-if="isDownloading && downloadingModelType === selectedModelType" class="download-progress-box">
+        <!-- 下载进度（总进度）：始终显示，用模型名称区分 -->
+        <div v-if="isDownloading" class="download-progress-box">
           <div class="progress-header">
             <span>正在下载 {{ downloadingModelName || currentModelName }}</span>
             <span class="progress-percent">{{ downloadProgress.toFixed(1) }}%</span>
