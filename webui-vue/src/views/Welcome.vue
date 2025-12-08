@@ -200,7 +200,7 @@
           <span>检测中...</span>
         </div>
 
-        <!-- 下载按钮：完全缺失或部分缺失时显示 -->
+        <!-- 下载按钮：完全缺失或部分缺失时显示（且没有其他下载进行中） -->
         <el-button 
           v-if="needsDownload && !isDownloading" 
           type="primary" 
@@ -212,8 +212,18 @@
           {{ downloadButtonText }}
         </el-button>
         
-        <!-- 下载进度（总进度） -->
-        <div v-if="isDownloading" class="download-progress-box">
+        <!-- 其他模型正在下载的提示 -->
+        <el-alert
+          v-if="isDownloading && downloadingModelType !== selectedModelType"
+          type="info"
+          :closable="false"
+          show-icon
+        >
+          {{ downloadingModelName }} 正在下载中...
+        </el-alert>
+        
+        <!-- 下载进度（总进度）：只在当前选择的模型正在下载时显示 -->
+        <div v-if="isDownloading && downloadingModelType === selectedModelType" class="download-progress-box">
           <div class="progress-header">
             <span>正在下载 {{ downloadingModelName || currentModelName }}</span>
             <span class="progress-percent">{{ downloadProgress.toFixed(1) }}%</span>
@@ -290,6 +300,7 @@ const currentModelName = computed(() => {
 
 const startingDownload = ref(false)
 const downloadingModelName = ref('')  // 当前正在下载的模型名称
+const downloadingModelType = ref('')  // 当前正在下载的模型类型
 
 const systemInfo = computed(() => systemStore.systemInfo)
 const wsConnected = computed(() => wsStore.isConnected)
@@ -385,22 +396,25 @@ async function refreshModelStatus(modelType?: string) {
 async function startDownload() {
   startingDownload.value = true
   try {
-    // 保存正在下载的模型名称
+    // 保存正在下载的模型信息
     downloadingModelName.value = currentModelName.value
+    downloadingModelType.value = selectedModelType.value
     const res = await axios.post(`/api/system/download-model?model_type=${selectedModelType.value}`)
     ElMessage.success(`${currentModelName.value} 下载任务已启动`)
   } catch (e: any) {
     ElMessage.error('启动下载失败: ' + (e.response?.data?.detail || e.message))
     downloadingModelName.value = ''
+    downloadingModelType.value = ''
   } finally {
     startingDownload.value = false
   }
 }
 
-// 监听下载状态，完成时清空正在下载的模型名称
+// 监听下载状态，完成时清空正在下载的模型信息
 watch(isDownloading, (downloading, wasDownloading) => {
   if (wasDownloading && !downloading) {
     downloadingModelName.value = ''
+    downloadingModelType.value = ''
   }
 })
 
