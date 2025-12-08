@@ -73,14 +73,14 @@
               </div>
             </div>
             <el-alert 
-              v-if="config.model_type !== 'zimage'" 
+              v-if="config.model_type === 'longcat'" 
               type="info" 
               :closable="false"
               show-icon
               style="margin-top: 12px"
             >
               <template #title>
-                {{ config.model_type === 'longcat' ? 'LongCat-Image 需要配置模型路径' : '该模型类型即将支持' }}
+                LongCat-Image 需要配置模型路径
               </template>
             </el-alert>
           </div>
@@ -621,15 +621,6 @@ const availableModels = ref([
     tag: '新',
     tagType: 'warning',
     disabled: false
-  },
-  {
-    value: 'flux',
-    label: 'FLUX',
-    icon: '🌊',
-    description: '即将支持',
-    tag: '即将',
-    tagType: 'info',
-    disabled: true
   }
 ])
 
