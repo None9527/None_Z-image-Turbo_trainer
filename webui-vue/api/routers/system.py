@@ -12,45 +12,92 @@ from core import state
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
-# ModelScope 模型信息 - Z-Image-Turbo
-MODELSCOPE_MODEL_ID = "Tongyi-MAI/Z-Image-Turbo"
-EXPECTED_FILES = {
-    "model_index.json": {"required": True, "min_size": 100},
-    "transformer": {
-        "required": True,
-        "files": {
-            "config.json": {"min_size": 100},
-            "diffusion_pytorch_model.safetensors.index.json": {"min_size": 1000},
+# 多模型支持 - 模型规格定义
+MODEL_SPECS = {
+    "zimage": {
+        "name": "Z-Image-Turbo",
+        "model_id": "Tongyi-MAI/Z-Image-Turbo",
+        "path_env": "MODEL_PATH",  # 使用 MODEL_PATH 环境变量
+        "expected_files": {
+            "model_index.json": {"required": True, "min_size": 100},
+            "transformer": {
+                "required": True,
+                "files": {
+                    "config.json": {"min_size": 100},
+                    "diffusion_pytorch_model.safetensors.index.json": {"min_size": 1000},
+                }
+            },
+            "vae": {
+                "required": True,
+                "files": {
+                    "config.json": {"min_size": 100},
+                    "diffusion_pytorch_model.safetensors": {"min_size": 100 * 1024 * 1024}
+                }
+            },
+            "text_encoder": {
+                "required": True,
+                "files": {
+                    "config.json": {"min_size": 100},
+                    "model.safetensors.index.json": {"min_size": 1000},
+                }
+            },
+            "tokenizer": {
+                "required": True,
+                "files": {
+                    "tokenizer.json": {"min_size": 1000},
+                    "tokenizer_config.json": {"min_size": 100},
+                }
+            },
+            "scheduler": {
+                "required": True,
+                "files": {
+                    "scheduler_config.json": {"min_size": 100},
+                }
+            }
         }
     },
-    "vae": {
-        "required": True,
-        "files": {
-            "config.json": {"min_size": 100},
-            "diffusion_pytorch_model.safetensors": {"min_size": 100 * 1024 * 1024}  # ~100MB+
-        }
-    },
-    "text_encoder": {
-        "required": True,
-        "files": {
-            "config.json": {"min_size": 100},
-            "model.safetensors.index.json": {"min_size": 1000},
-        }
-    },
-    "tokenizer": {
-        "required": True,
-        "files": {
-            "tokenizer.json": {"min_size": 1000},
-            "tokenizer_config.json": {"min_size": 100},
-        }
-    },
-    "scheduler": {
-        "required": True,
-        "files": {
-            "scheduler_config.json": {"min_size": 100},
+    "longcat": {
+        "name": "LongCat-Image",
+        "model_id": None,  # 无自动下载
+        "path_env": "LONGCAT_MODEL_PATH",
+        "expected_files": {
+            "transformer": {
+                "required": True,
+                "files": {
+                    "config.json": {"min_size": 100},
+                }
+            },
+            "vae": {
+                "required": True,
+                "files": {
+                    "config.json": {"min_size": 100},
+                }
+            },
+            "text_encoder": {
+                "required": True,
+                "files": {
+                    "config.json": {"min_size": 100},
+                }
+            },
+            "tokenizer": {
+                "required": True,
+                "files": {
+                    "tokenizer.json": {"min_size": 1000},
+                }
+            },
+            "scheduler": {
+                "required": True,
+                "files": {
+                    "scheduler_config.json": {"min_size": 100},
+                }
+            }
         }
     }
 }
+
+# 向后兼容 - 默认 Z-Image 规格
+MODELSCOPE_MODEL_ID = MODEL_SPECS["zimage"]["model_id"]
+EXPECTED_FILES = MODEL_SPECS["zimage"]["expected_files"]
 
 @router.get("/status")
 async def get_system_status():
@@ -478,33 +525,73 @@ def check_component_enhanced(model_path: Path, component_name: str, expected: di
         return result
 
 @router.get("/model-status")
-async def get_model_status():
-    """增强的模型状态检测 - 基于预定义规格校验"""
+async def get_model_status(model_type: str = "zimage"):
+    """增强的模型状态检测 - 支持多模型类型
+    
+    Args:
+        model_type: 模型类型 (zimage, longcat)
+    """
     try:
-        model_path = Path(MODEL_PATH)
+        # 获取模型规格
+        if model_type not in MODEL_SPECS:
+            model_type = "zimage"
+        
+        spec = MODEL_SPECS[model_type]
+        expected_files = spec["expected_files"]
+        
+        # 确定模型路径
+        if model_type == "zimage":
+            model_path = Path(MODEL_PATH)
+        elif model_type == "longcat":
+            # LongCat 使用环境变量或默认路径
+            longcat_path = os.environ.get("LONGCAT_MODEL_PATH", "")
+            if not longcat_path:
+                # 尝试常见路径
+                possible_paths = [
+                    Path("D:/AI/LongCat-Image/models"),
+                    Path(MODEL_PATH).parent / "longcat-image",
+                ]
+                for p in possible_paths:
+                    if p.exists():
+                        longcat_path = str(p)
+                        break
+            model_path = Path(longcat_path) if longcat_path else Path("")
+        else:
+            model_path = Path(MODEL_PATH)
         
         components = {}
         overall_valid = True
         
-        for name, spec in EXPECTED_FILES.items():
-            result = check_component_enhanced(model_path, name, spec)
-            components[name] = result
-            
-            if spec.get("required", False) and not result["valid"]:
-                overall_valid = False
+        if model_path.exists():
+            for name, file_spec in expected_files.items():
+                result = check_component_enhanced(model_path, name, file_spec)
+                components[name] = result
+                
+                if file_spec.get("required", False) and not result["valid"]:
+                    overall_valid = False
+        else:
+            # 路径不存在，所有组件标记为缺失
+            for name, file_spec in expected_files.items():
+                components[name] = {
+                    "exists": False,
+                    "valid": False,
+                    "reason": "模型路径不存在"
+                }
+                if file_spec.get("required", False):
+                    overall_valid = False
         
         # 统计
-        total = len(EXPECTED_FILES)
+        total = len(expected_files)
         valid_count = sum(1 for c in components.values() if c["valid"])
-        invalid_count = sum(1 for c in components.values() if c["exists"] and not c["valid"])
-        missing_count = sum(1 for c in components.values() if not c["exists"])
         
         return {
             "exists": valid_count > 0,
             "valid": overall_valid,
             "details": components,
             "path": str(model_path),
-            "model_id": MODELSCOPE_MODEL_ID,
+            "model_type": model_type,
+            "model_name": spec["name"],
+            "model_id": spec.get("model_id"),
             "summary": {
                 "total_components": total,
                 "valid_components": valid_count,
@@ -520,7 +607,8 @@ async def get_model_status():
             "valid": False,
             "error": str(e),
             "details": {},
-            "path": MODEL_PATH
+            "path": str(MODEL_PATH),
+            "model_type": model_type
         }
 
 @router.post("/verify-from-modelscope")

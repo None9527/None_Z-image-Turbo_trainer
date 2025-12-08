@@ -126,12 +126,25 @@
         <div class="card-header">
           <el-icon><Box /></el-icon>
           <span>基础模型</span>
-          <el-tag :type="modelStatus.exists ? 'success' : 'warning'" size="small" effect="dark">
-            {{ modelStatus.exists ? '就绪' : '需下载' }}
+          <el-tag :type="currentModelStatus.exists ? 'success' : 'warning'" size="small" effect="dark">
+            {{ currentModelStatus.exists ? '就绪' : '需下载' }}
           </el-tag>
         </div>
+
+        <!-- 模型类型选择 -->
+        <div class="model-selector">
+          <div 
+            v-for="model in modelTypes" 
+            :key="model.value"
+            :class="['model-type-btn', { active: selectedModelType === model.value }]"
+            @click="selectModelType(model.value)"
+          >
+            <span class="model-icon">{{ model.icon }}</span>
+            <span class="model-label">{{ model.label }}</span>
+          </div>
+        </div>
         
-        <div class="model-status" v-if="modelStatus.summary">
+        <div class="model-status" v-if="currentModelStatus.summary">
           <div class="model-ring">
             <svg viewBox="0 0 100 100">
               <circle class="ring-bg" cx="50" cy="50" r="42" />
@@ -146,18 +159,18 @@
           <div class="model-details">
             <div class="detail-row">
               <span>有效组件</span>
-              <strong class="success">{{ modelStatus.summary.valid_components }}</strong>
+              <strong class="success">{{ currentModelStatus.summary.valid_components }}</strong>
             </div>
             <div class="detail-row">
               <span>总组件</span>
-              <strong>{{ modelStatus.summary.total_components }}</strong>
+              <strong>{{ currentModelStatus.summary.total_components }}</strong>
             </div>
           </div>
         </div>
 
-        <div class="component-grid" v-if="modelStatus.details">
+        <div class="component-grid" v-if="currentModelStatus.details">
           <div 
-            v-for="(comp, name) in modelStatus.details" 
+            v-for="(comp, name) in currentModelStatus.details" 
             :key="name"
             class="comp-item"
             :class="{ valid: comp.valid, missing: !comp.exists }"
@@ -170,8 +183,19 @@
           </div>
         </div>
 
+        <!-- 未检测状态 -->
+        <div v-if="!currentModelStatus.summary && !loadingModel" class="model-unchecked">
+          <el-icon><WarningFilled /></el-icon>
+          <span>未检测到模型，请先配置模型路径</span>
+        </div>
+
+        <div v-if="loadingModel" class="loading-state">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          <span>检测中...</span>
+        </div>
+
         <el-button 
-          v-if="!modelStatus.exists && !isDownloading" 
+          v-if="!currentModelStatus.exists && !isDownloading && selectedModelType === 'zimage'" 
           type="primary" 
           @click="startDownload" 
           :loading="startingDownload"
@@ -180,6 +204,16 @@
           <el-icon><Download /></el-icon>
           下载 Z-Image-Turbo 模型
         </el-button>
+
+        <el-alert 
+          v-if="selectedModelType === 'longcat' && !currentModelStatus.exists"
+          type="info"
+          :closable="false"
+          show-icon
+          style="margin-top: 8px"
+        >
+          LongCat-Image 需要手动配置模型路径
+        </el-alert>
         
         <div v-if="isDownloading" class="download-progress">
           <el-progress :percentage="downloadProgress" :stroke-width="8" />
@@ -211,7 +245,7 @@ import { useWebSocketStore } from '@/stores/websocket'
 import { 
   Picture, Setting, VideoPlay, Monitor,
   CircleCheck, Close, Loading, Box,
-  ArrowRight, MagicStick, Download, CopyDocument
+  ArrowRight, MagicStick, Download, CopyDocument, WarningFilled
 } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
@@ -219,7 +253,23 @@ import { ElMessage } from 'element-plus'
 const systemStore = useSystemStore()
 const wsStore = useWebSocketStore()
 
-const modelStatus = ref({ exists: false, details: null as any, summary: null as any })
+// 多模型支持
+const modelTypes = ref([
+  { value: 'zimage', label: 'Z-Image', icon: '⚡' },
+  { value: 'longcat', label: 'LongCat', icon: '🐱' }
+])
+
+const selectedModelType = ref('zimage')
+const loadingModel = ref(false)
+
+// 每个模型的状态
+const modelStatusMap = ref<Record<string, any>>({
+  zimage: { exists: false, details: null, summary: null },
+  longcat: { exists: false, details: null, summary: null }
+})
+
+const currentModelStatus = computed(() => modelStatusMap.value[selectedModelType.value] || { exists: false, details: null, summary: null })
+
 const startingDownload = ref(false)
 
 const systemInfo = computed(() => systemStore.systemInfo)
@@ -235,8 +285,8 @@ const downloadSizeText = computed(() => {
 })
 
 const validPercent = computed(() => {
-  if (!modelStatus.value.summary) return 0
-  const { valid_components, total_components } = modelStatus.value.summary
+  if (!currentModelStatus.value.summary) return 0
+  const { valid_components, total_components } = currentModelStatus.value.summary
   return Math.round((valid_components / total_components) * 100)
 })
 
@@ -258,12 +308,22 @@ function getComponentName(name: string): string {
   return componentNames[name] || name
 }
 
-async function refreshModelStatus() {
+async function selectModelType(type: string) {
+  selectedModelType.value = type
+  await refreshModelStatus(type)
+}
+
+async function refreshModelStatus(modelType?: string) {
+  const type = modelType || selectedModelType.value
+  loadingModel.value = true
   try {
-    const res = await axios.get('/api/system/model-status')
-    modelStatus.value = res.data
+    const res = await axios.get(`/api/system/model-status?model_type=${type}`)
+    modelStatusMap.value[type] = res.data
   } catch (e) {
     console.error('Failed to check model status:', e)
+    modelStatusMap.value[type] = { exists: false, details: null, summary: null }
+  } finally {
+    loadingModel.value = false
   }
 }
 
@@ -726,6 +786,61 @@ refreshModelStatus()
 /* 模型状态 */
 .model-card {
   flex: 1;
+}
+
+.model-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.model-type-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--bg-darker);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.model-type-btn:hover {
+  border-color: var(--primary);
+  background: rgba(240, 180, 41, 0.05);
+}
+
+.model-type-btn.active {
+  border-color: var(--primary);
+  background: rgba(240, 180, 41, 0.1);
+}
+
+.model-type-btn .model-icon {
+  font-size: 18px;
+}
+
+.model-type-btn .model-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.model-unchecked {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.model-unchecked .el-icon {
+  font-size: 18px;
+  color: var(--warning);
 }
 
 .model-status {
