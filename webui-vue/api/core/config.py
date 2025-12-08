@@ -22,6 +22,8 @@ def _resolve_path(env_key: str, default: str) -> Path:
     value = os.getenv(env_key, "")
     if not value:
         value = default
+    if not value:  # 如果仍然为空，返回 None
+        return None
     p = Path(value)
     if not p.is_absolute():
         p = PROJECT_ROOT / p
@@ -150,6 +152,7 @@ class GenerationRequest(BaseModel):
     lora_path: Optional[str] = None
     lora_scale: float = 1.0
     comparison_mode: bool = False
+    model_type: str = "zimage"  # 支持: zimage, longcat
 
 class DeleteHistoryRequest(BaseModel):
     timestamps: List[str]

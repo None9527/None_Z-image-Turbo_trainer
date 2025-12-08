@@ -121,7 +121,7 @@
         </div>
       </div>
 
-      <!-- 模型状态 -->
+      <!-- 模型状态（使用抽象层接口） -->
       <div class="status-card model-card">
         <div class="card-header">
           <el-icon><Box /></el-icon>
@@ -213,20 +213,24 @@
         </el-button>
         
         <!-- 下载进度（总进度）：始终显示，用模型名称区分 -->
-        <div v-if="isDownloading" class="download-progress-box">
+        <div v-if="isDownloading || isDownloadCompleted" class="download-progress-box">
           <div class="progress-header">
-            <span>正在下载 {{ downloadingModelName || currentModelName }}</span>
-            <span class="progress-percent">{{ downloadProgress.toFixed(1) }}%</span>
+            <span>{{ isDownloadCompleted ? '下载完成' : `正在下载 ${downloadingModelName || currentModelName}` }}</span>
+            <span class="progress-percent">{{ isDownloadCompleted ? 100 : downloadProgress.toFixed(1) }}%</span>
           </div>
           <el-progress 
-            :percentage="downloadProgress" 
+            :percentage="isDownloadCompleted ? 100 : downloadProgress" 
             :stroke-width="10"
             :show-text="false"
             status="success"
           />
-          <div class="progress-info">
+          <div class="progress-info" v-if="!isDownloadCompleted">
             <span>{{ downloadedSize }} / {{ totalSize }}</span>
             <span>{{ downloadSpeed }}</span>
+          </div>
+          <div class="progress-info" v-else>
+             <span>已完成</span>
+             <el-button link type="primary" @click="systemStore.updateDownloadStatus({ status: 'idle' })">关闭</el-button>
           </div>
         </div>
       </div>
@@ -249,7 +253,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useSystemStore } from '@/stores/system'
 import { useWebSocketStore } from '@/stores/websocket'
 import { 
@@ -260,6 +265,7 @@ import {
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
+const router = useRouter()
 const systemStore = useSystemStore()
 const wsStore = useWebSocketStore()
 
@@ -290,6 +296,8 @@ const currentModelName = computed(() => {
 
 const startingDownload = ref(false)
 
+
+
 // 从后端状态获取正在下载的模型信息
 const downloadingModelName = computed(() => downloadStatus.value.model_name || '')
 const downloadingModelType = computed(() => downloadStatus.value.model_type || '')
@@ -301,6 +309,7 @@ const hasSystemInfo = computed(() => systemStore.systemInfo.python !== '')
 // 下载状态
 const downloadStatus = computed(() => systemStore.downloadStatus)
 const isDownloading = computed(() => downloadStatus.value.status === 'running')
+const isDownloadCompleted = computed(() => downloadStatus.value.status === 'completed')
 const downloadProgress = computed(() => downloadStatus.value.progress || 0)
 const downloadedSize = computed(() => {
   const gb = downloadStatus.value.downloaded_size_gb || 0
@@ -314,6 +323,14 @@ const downloadSpeed = computed(() => {
   const speed = downloadStatus.value.speed || 0
   const unit = downloadStatus.value.speed_unit || 'MB'
   return speed > 0 ? `${speed.toFixed(1)} ${unit}/s` : '计算中...'
+})
+
+// 监听下载状态变化
+watch(() => downloadStatus.value.status, (newStatus, oldStatus) => {
+  if (newStatus === 'completed' && oldStatus === 'running') {
+    ElMessage.success('下载完成！正在刷新模型状态...')
+    refreshModelStatus()
+  }
 })
 
 // 是否需要下载（完全缺失或部分缺失）
@@ -362,8 +379,9 @@ const componentNames: Record<string, string> = {
   'model_index.json': 'Model Index'
 }
 
-function getComponentName(name: string): string {
-  return componentNames[name] || name
+function getComponentName(name: string | number): string {
+  const key = String(name)
+  return componentNames[key] || key
 }
 
 async function selectModelType(type: string) {
@@ -375,11 +393,21 @@ async function refreshModelStatus(modelType?: string) {
   const type = modelType || selectedModelType.value
   loadingModel.value = true
   try {
-    const res = await axios.get(`/api/system/model-status?model_type=${type}`)
-    modelStatusMap.value[type] = res.data
+    // 使用抽象层接口检测模型状态
+    const res = await axios.get(`/api/system/model-detector/detect/${type}`)
+    if (res.data.success) {
+      modelStatusMap.value[type] = {
+        exists: res.data.status === 'valid' || res.data.status === 'incomplete',
+        details: res.data.components,
+        summary: res.data.summary,
+        path: res.data.path
+      }
+    } else {
+      modelStatusMap.value[type] = { exists: false, details: null, summary: null, path: '' }
+    }
   } catch (e) {
     console.error('Failed to check model status:', e)
-    modelStatusMap.value[type] = { exists: false, details: null, summary: null }
+    modelStatusMap.value[type] = { exists: false, details: null, summary: null, path: '' }
   } finally {
     loadingModel.value = false
   }

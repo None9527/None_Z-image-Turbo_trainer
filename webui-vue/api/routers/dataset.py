@@ -17,6 +17,14 @@ from core import state
 
 router = APIRouter(prefix="/api/dataset", tags=["dataset"])
 
+# 多模型缓存后缀配置
+CACHE_SUFFIXES = {
+    "zimage": {"latent": "_zi.safetensors", "text": "_zi_te.safetensors", "latent_pattern": "*_zi.safetensors"},
+    "longcat": {"latent": "_lc.safetensors", "text": "_lc_te.safetensors", "latent_pattern": "*_lc.safetensors"},
+}
+ALL_LATENT_PATTERNS = ["*_zi.safetensors", "*_lc.safetensors"]
+ALL_TEXT_SUFFIXES = ["_zi_te.safetensors", "_lc_te.safetensors"]
+
 @router.post("/scan")
 async def scan_dataset(request: DatasetScanRequest):
     """Scan a directory for images"""
@@ -50,13 +58,18 @@ async def scan_dataset(request: DatasetScanRequest):
                 if caption_file.exists():
                     caption = caption_file.read_text(encoding='utf-8').strip()
                 
-                # Check for latent cache file (e.g. image_1024x1024_zi.safetensors)
-                # We look for any file matching the pattern
-                has_latent_cache = any(file.parent.glob(f"{file.stem}_*_zi.safetensors"))
+                # Check for latent cache file (support multiple model types)
+                # 支持 zimage (_zi) 和 longcat (_lc) 缓存格式
+                has_latent_cache = any(
+                    any(file.parent.glob(f"{file.stem}_*{suffix}"))
+                    for suffix in ["_zi.safetensors", "_lc.safetensors"]
+                )
                 
-                # Check for text encoder cache file
-                text_cache = file.parent / f"{file.stem}_zi_te.safetensors"
-                has_text_cache = text_cache.exists()
+                # Check for text encoder cache file (any model type)
+                has_text_cache = any(
+                    (file.parent / f"{file.stem}{suffix}").exists()
+                    for suffix in ALL_TEXT_SUFFIXES
+                )
                 
                 # URL 编码路径，处理特殊字符（中文、空格等）
                 encoded_path = urllib.parse.quote(str(file), safe='')
@@ -315,8 +328,11 @@ async def list_cached_datasets():
                             if f.is_file() and f.suffix.lower() in image_extensions
                         )
                         
-                        # 检查是否有缓存文件
-                        cache_count = len(list(item.glob("*_zi.safetensors")))
+                        # 检查是否有缓存文件 (支持多模型)
+                        cache_count = sum(
+                            len(list(item.glob(pattern)))
+                            for pattern in ALL_LATENT_PATTERNS
+                        )
                         
                         if image_count > 0 or cache_count > 0:
                             name = f"{prefix}{item.name}" if prefix else item.name
@@ -387,14 +403,17 @@ async def delete_images(request: DeleteImagesRequest):
                 txt_path = abs_path.with_suffix('.txt')
                 if txt_path.exists():
                     txt_path.unlink()
+                
+                # 删除所有模型类型的缓存文件
+                for model_type, suffixes in CACHE_SUFFIXES.items():
+                    # 删除 latent 缓存 (pattern: stem_WxH_suffix)
+                    for cache_file in abs_path.parent.glob(f"{abs_path.stem}_*{suffixes['latent']}"):
+                        cache_file.unlink()
                     
-                latent_cache = abs_path.parent / f"{abs_path.stem}_zi.safetensors"
-                if latent_cache.exists():
-                    latent_cache.unlink()
-                    
-                text_cache = abs_path.parent / f"{abs_path.stem}_zi_te.safetensors"
-                if text_cache.exists():
-                    text_cache.unlink()
+                    # 删除 text encoder 缓存
+                    text_cache = abs_path.parent / f"{abs_path.stem}{suffixes['text']}"
+                    if text_cache.exists():
+                        text_cache.unlink()
                     
                 deleted_count += 1
             else:

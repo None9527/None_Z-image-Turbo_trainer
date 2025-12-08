@@ -5,7 +5,7 @@ import sys
 import os
 import threading
 from pathlib import Path
-from core.config import PROJECT_ROOT
+from core.config import PROJECT_ROOT, get_model_path
 from core import state
 
 router = APIRouter(prefix="/api/cache", tags=["cache"])
@@ -22,8 +22,9 @@ class CacheGenerationRequest(BaseModel):
     datasetPath: str
     generateLatent: bool
     generateText: bool
-    vaePath: str
-    textEncoderPath: str
+    vaePath: str = ""  # 已弃用，后端根据 modelType 自动获取
+    textEncoderPath: str = ""  # 已弃用，后端根据 modelType 自动获取
+    modelType: str = "zimage"  # 模型类型: zimage, longcat
     resolution: int = 1024
     batchSize: int = 1
 
@@ -51,8 +52,11 @@ def _start_text_cache_after_latent():
         env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
         env["PYTHONUNBUFFERED"] = "1"
         
+        # 使用保存的模型类型选择text缓存模块
+        text_module = params.get("text_module", "zimage_trainer.cache_text_encoder")
+        
         cmd_text = [
-            sys.executable, "-m", "zimage_trainer.cache_text_encoder",
+            sys.executable, "-m", text_module,
             "--text_encoder", params["text_encoder"],
             "--input_dir", params["input_dir"],
             "--output_dir", params["output_dir"],
@@ -91,6 +95,13 @@ async def generate_cache(request: CacheGenerationRequest):
     if not dataset_path.exists():
         raise HTTPException(status_code=404, detail="Dataset path not found")
     
+    # 根据模型类型获取正确的模型路径
+    model_type = request.modelType
+    vae_path = str(get_model_path(model_type, "vae"))
+    text_encoder_path = str(get_model_path(model_type, "text_encoder"))
+    
+    state.add_log(f"模型类型: {model_type}, VAE: {vae_path}, Text Encoder: {text_encoder_path}", "info")
+    
     env = os.environ.copy()
     env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
     env["PYTHONUNBUFFERED"] = "1"
@@ -99,15 +110,23 @@ async def generate_cache(request: CacheGenerationRequest):
     
     # Latent Cache (先执行)
     if request.generateLatent:
-        if not request.vaePath:
-            raise HTTPException(status_code=400, detail="VAE path is required for latent caching")
+        # 验证 VAE 路径存在
+        if not Path(vae_path).exists():
+            raise HTTPException(status_code=400, detail=f"VAE path not found: {vae_path}")
         
         # 重置进度（清除上次遗留）
         state.reset_cache_progress("latent")
         
+        # 根据模型类型选择缓存脚本模块
+        cache_module_map = {
+            "zimage": "zimage_trainer.cache_latents",
+            "longcat": "longcat_image.cache_latents",  # LongCat 使用 longcat_image 模块
+        }
+        latent_module = cache_module_map.get(request.modelType, "zimage_trainer.cache_latents")
+        
         cmd_latent = [
-            sys.executable, "-m", "zimage_trainer.cache_latents",
-            "--vae", request.vaePath,
+            sys.executable, "-m", latent_module,
+            "--vae", vae_path,  # 使用根据模型类型获取的路径
             "--input_dir", str(dataset_path),
             "--output_dir", str(dataset_path),
             "--resolution", str(request.resolution),
@@ -131,18 +150,27 @@ async def generate_cache(request: CacheGenerationRequest):
     
     # Text Encoder Cache
     if request.generateText:
-        if not request.textEncoderPath:
-            raise HTTPException(status_code=400, detail="Text Encoder path is required for text caching")
+        # 验证 Text Encoder 路径存在
+        if not Path(text_encoder_path).exists():
+            raise HTTPException(status_code=400, detail=f"Text Encoder path not found: {text_encoder_path}")
         
         # 重置进度（清除上次遗留）
         state.reset_cache_progress("text")
         
+        # 根据模型类型选择text缓存模块
+        text_module_map = {
+            "zimage": "zimage_trainer.cache_text_encoder",
+            "longcat": "longcat_image.cache_text_encoder",  # LongCat 使用 longcat_image 模块
+        }
+        text_module = text_module_map.get(request.modelType, "zimage_trainer.cache_text_encoder")
+        
         # 如果同时请求了 latent，则排队等待（顺序执行）
         if request.generateLatent:
             _pending_text_cache = {
-                "text_encoder": request.textEncoderPath,
+                "text_encoder": text_encoder_path,  # 使用根据模型类型获取的路径
                 "input_dir": str(dataset_path),
-                "output_dir": str(dataset_path)
+                "output_dir": str(dataset_path),
+                "text_module": text_module
             }
             state.add_log("Text cache 已排队，将在 Latent cache 完成后自动开始", "info")
             started_tasks.append("text (queued)")
@@ -153,8 +181,8 @@ async def generate_cache(request: CacheGenerationRequest):
         else:
             # 只请求 text，直接执行
             cmd_text = [
-                sys.executable, "-m", "zimage_trainer.cache_text_encoder",
-                "--text_encoder", request.textEncoderPath,
+                sys.executable, "-m", text_module,
+                "--text_encoder", text_encoder_path,  # 使用根据模型类型获取的路径
                 "--input_dir", str(dataset_path),
                 "--output_dir", str(dataset_path),
                 "--skip_existing"
@@ -244,9 +272,11 @@ class CacheClearRequest(BaseModel):
     datasetPath: str
     clearLatent: bool = False
     clearText: bool = False
+    modelType: str = "zimage"  # 模型类型
 
 class CacheCheckRequest(BaseModel):
     datasetPath: str
+    modelType: str = "zimage"  # 模型类型
 
 @router.post("/check")
 async def check_cache_status(request: CacheCheckRequest):
@@ -266,18 +296,22 @@ async def check_cache_status(request: CacheCheckRequest):
     latent_cached = 0
     text_cached = 0
     
+    # 获取模型对应的缓存后缀
+    from .training import get_cache_suffixes
+    latent_pattern, text_suffix = get_cache_suffixes(request.modelType)
+    
     # 检查每个图片的缓存
     for img in images:
         stem = img.stem
         parent = img.parent
         
-        # 检查 latent 缓存 (格式: {name}_{WxH}_zi.safetensors)
-        latent_files = list(parent.glob(f"{stem}_*_zi.safetensors"))
+        # 检查 latent 缓存 (使用动态模式)
+        latent_files = list(parent.glob(f"{stem}{latent_pattern}"))
         if latent_files:
             latent_cached += 1
         
-        # 检查 text 缓存 (格式: {name}_zi_te.safetensors)
-        text_files = list(parent.glob(f"{stem}_zi_te.safetensors"))
+        # 检查 text 缓存 (使用动态后缀)
+        text_files = list(parent.glob(f"{stem}{text_suffix}"))
         if text_files:
             text_cached += 1
     
@@ -300,12 +334,18 @@ async def clear_cache(request: CacheClearRequest):
     deleted_count = 0
     errors = []
     
+    # 获取模型对应的缓存后缀用于删除
+    from .training import get_cache_suffixes
+    latent_pattern, text_suffix = get_cache_suffixes(request.modelType)
+    
     # Define patterns to delete
     patterns = []
     if request.clearLatent:
-        patterns.append("*_zi.safetensors")
+        # latent_pattern 是 glob 模式如 "_*_zi.safetensors"
+        patterns.append(f"*{latent_pattern}")
     if request.clearText:
-        patterns.append("*_zi_te.safetensors")
+        # text_suffix 是后缀如 "_zi_te.safetensors"
+        patterns.append(f"*{text_suffix}")
     
     if not patterns:
         return {"success": True, "deleted": 0, "message": "No cache type selected"}

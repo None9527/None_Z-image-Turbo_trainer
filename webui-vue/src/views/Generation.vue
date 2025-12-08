@@ -12,6 +12,19 @@
             </template>
             
             <el-form :model="params" size="small" class="params-form">
+              <!-- Model Type Selector -->
+              <div class="param-group">
+                <div class="group-label">模型类型 (MODEL)</div>
+                <el-radio-group v-model="params.model_type" class="model-selector">
+                  <el-radio-button label="zimage">
+                    <el-icon><Aim /></el-icon> Z-Image
+                  </el-radio-button>
+                  <el-radio-button label="longcat">
+                    <el-icon><MagicStick /></el-icon> LongCat
+                  </el-radio-button>
+                </el-radio-group>
+              </div>
+
               <!-- Prompt -->
               <div class="param-group">
                 <div class="group-label">提示词 (PROMPT)</div>
@@ -262,6 +275,9 @@
             <div class="history-info">
               <div class="history-prompt" :title="item.metadata.prompt">{{ item.metadata.prompt }}</div>
               <div class="history-meta">
+                <el-tag size="small" :type="(item.metadata.model_type === 'longcat' ? 'warning' : 'primary') as 'warning' | 'primary'" effect="plain">
+                  {{ item.metadata.model_type === 'longcat' ? 'LongCat' : 'Z-Image' }}
+                </el-tag>
                 <span>{{ item.metadata.width }}x{{ item.metadata.height }}</span>
                 <span>Seed: {{ item.metadata.seed }}</span>
               </div>
@@ -337,6 +353,12 @@
               <span class="label">Seed:</span>
               <span class="text">{{ lightboxItem.metadata.seed }}</span>
             </div>
+            <div class="info-item">
+              <span class="label">Model:</span>
+              <el-tag size="small" :type="(lightboxItem.metadata.model_type === 'longcat' ? 'warning' : 'primary') as 'warning' | 'primary'">
+                {{ lightboxItem.metadata.model_type === 'longcat' ? 'LongCat' : 'Z-Image' }}
+              </el-tag>
+            </div>
             <div class="info-item" v-if="lightboxItem.metadata.lora_path">
               <span class="label">LoRA:</span>
               <span class="text">{{ lightboxItem.metadata.lora_path.split('/').pop() }} ({{ lightboxItem.metadata.lora_scale }})</span>
@@ -350,7 +372,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, reactive, watch } from 'vue'
-import { MagicStick, Download, Picture, Refresh, Clock, Plus, Minus, ZoomIn, Close, Delete, Operation, Loading, WarningFilled } from '@element-plus/icons-vue'
+import { MagicStick, Download, Picture, Refresh, Clock, Plus, Minus, ZoomIn, Close, Delete, Operation, Loading, WarningFilled, Aim } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useWebSocketStore } from '@/stores/websocket'
@@ -398,7 +420,8 @@ const defaultParams = {
   height: 1024,
   lora_path: null as string | null,
   lora_scale: 1.0,
-  comparison_mode: false
+  comparison_mode: false,
+  model_type: "zimage" as "zimage" | "longcat"
 }
 
 const savedParams = loadSavedParams()
@@ -615,7 +638,7 @@ const fetchHistory = async () => {
   loadingHistory.value = true
   try {
     const res = await axios.get('/api/history')
-    historyList.value = res.data
+    historyList.value = res.data.history || res.data || []
   } catch (e) {
     console.error('Failed to fetch history:', e)
     ElMessage.error('获取历史记录失败')
@@ -688,6 +711,7 @@ const restoreParams = (metadata: any) => {
   params.value.seed = metadata.seed
   params.value.width = metadata.width
   params.value.height = metadata.height
+  params.value.model_type = metadata.model_type || "zimage"
   if (metadata.lora_path) {
     params.value.lora_path = metadata.lora_path
     params.value.lora_scale = metadata.lora_scale || 1.0
@@ -844,6 +868,23 @@ onMounted(() => {
   background: var(--el-bg-color);
   border-color: var(--el-border-color-light);
   font-family: inherit;
+}
+
+.model-selector {
+  width: 100%;
+  display: flex;
+}
+
+.model-selector :deep(.el-radio-button) {
+  flex: 1;
+}
+
+.model-selector :deep(.el-radio-button__inner) {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .ratio-grid {
@@ -1165,6 +1206,7 @@ onMounted(() => {
   color: var(--el-text-color-primary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   line-height: 1.4;

@@ -10,6 +10,18 @@ from typing import Optional, Dict, Any
 from core.config import PROJECT_ROOT, MODEL_PATH, LONGCAT_MODEL_PATH, MODEL_PATHS, get_model_path
 from core import state
 
+# 导入新的模型检测和下载抽象层
+import sys
+sys.path.insert(0, str(PROJECT_ROOT))
+from src.models.model_detector import (
+    create_model_detector, auto_detect_model, check_model_integrity,
+    ModelStatus, ZImageDetector, LongCatDetector
+)
+from src.models.model_downloader import (
+    create_model_downloader, get_model_download_info, DownloadStatus,
+    ModelDownloadManager
+)
+
 router = APIRouter(prefix="/api/system", tags=["system"])
 
 # 多模型支持 - 模型规格定义
@@ -57,8 +69,8 @@ MODEL_SPECS = {
         }
     },
     "longcat": {
-        "name": "LongCat-Image",
-        "model_id": "meituan-longcat/LongCat-Image",
+        "name": "LongCat-Image-Dev",
+        "model_id": "meituan-longcat/LongCat-Image-Dev",
         "path_env": "LONGCAT_MODEL_PATH",
         "default_path": "longcat_models",  # 默认下载目录
         "expected_files": {
@@ -704,15 +716,6 @@ async def verify_model_integrity(model_type: str = "zimage"):
 async def verify_from_modelscope():
     """从 ModelScope 在线校验模型完整性（旧版兼容）"""
     return await verify_model_integrity("zimage")
-        }
-        
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return {
-            "success": False,
-            "error": str(e)
-        }
 
 @router.post("/download-model")
 async def download_model(model_type: str = "zimage"):
@@ -740,17 +743,30 @@ async def download_model(model_type: str = "zimage"):
         
         model_path.mkdir(parents=True, exist_ok=True)
         
-        # Command to download using python script
+        # 使用清空重下版本(避免续传问题)
+        download_script = PROJECT_ROOT / "scripts" / "download_fresh.py"
+        
+        # 回退顺序: fresh -> module -> final -> v2 -> 原版
+        if not download_script.exists():
+            download_script = PROJECT_ROOT / "scripts" / "download_via_module.py"
+        if not download_script.exists():
+            download_script = PROJECT_ROOT / "scripts" / "download_model_final.py"
+        if not download_script.exists():
+            download_script = PROJECT_ROOT / "scripts" / "download_model_v2.py"
+        if not download_script.exists():
+            download_script = PROJECT_ROOT / "scripts" / "download_model.py"
+        
         cmd = [
             sys.executable, 
-            str(PROJECT_ROOT / "scripts" / "download_model.py"),
+            str(download_script),
             str(model_path),
-            model_id  # 传入模型 ID
+            model_id
         ]
         
         state.add_log(f"开始下载 {spec['name']} 模型...", "info")
         state.add_log(f"ModelScope ID: {model_id}", "info")
         state.add_log(f"下载目录: {model_path}", "info")
+        state.add_log(f"使用下载器: {download_script.name}", "info")
         
         # 保存正在下载的模型信息
         state.update_download_progress(
@@ -773,7 +789,7 @@ async def download_model(model_type: str = "zimage"):
         
         return {
             "success": True, 
-            "message": f"{spec['name']} 下载已启动",
+            "message": f"{spec['name']} 下载已启动 (使用 {download_script.name})",
             "model_type": model_type,
             "model_id": model_id,
             "path": str(model_path)
@@ -794,10 +810,10 @@ async def get_download_status():
     if return_code is None:
         return {"status": "running"}
     elif return_code == 0:
-        state.download_process = None
+        # state.download_process = None  # 不要立即清除，防止日志未读完
         return {"status": "completed"}
     else:
-        state.download_process = None
+        # state.download_process = None  # 不要立即清除，以便查看错误
         return {"status": "failed", "code": return_code}
 
 @router.get("/gpu")

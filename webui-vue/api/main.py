@@ -4,10 +4,15 @@ FastAPI backend for the training web UI
 """
 
 import argparse
+import sys
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+
+# 添加当前目录到Python路径
+sys.path.insert(0, str(Path(__file__).parent))
 
 from core.config import OUTPUTS_DIR, WEBUI_DIR, PROJECT_ROOT
 from core import state
@@ -16,7 +21,7 @@ from core import state
 # If you need a specific venv, activate it before running this script
 
 # Import routers
-from routers import training, dataset, system, generation, cache, websocket
+from routers import training, dataset, system, cache, websocket, system_abstract_layer, generation
 
 app = FastAPI(title="Z-Image Trainer", version="1.0.0")
 
@@ -33,6 +38,7 @@ app.add_middleware(
 app.include_router(training.router)
 app.include_router(dataset.router)
 app.include_router(system.router)
+app.include_router(system_abstract_layer.router)  # 抽象层路由
 app.include_router(generation.router)
 app.include_router(cache.router)
 

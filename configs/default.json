@@ -1,9 +1,17 @@
 {
   "name": "default",
+  "model_type": "zimage",
   "acrf": {
+    "enable_turbo": true,
     "turbo_steps": 10,
     "shift": 3,
-    "jitter_scale": 0.02
+    "jitter_scale": 0.02,
+    "use_dynamic_shifting": true,
+    "base_shift": 0.5,
+    "max_shift": 1.15,
+    "snr_gamma": 5,
+    "snr_floor": 0.1,
+    "use_anchor": true
   },
   "network": {
     "dim": 16,
@@ -23,8 +31,7 @@
     "lr_num_cycles": 1,
     "lambda_fft": 0,
     "lambda_cosine": 0,
-    "snr_gamma": 5,
-    "loss_mode": "unified",
+    "loss_mode": "standard",
     "alpha_hf": 1,
     "beta_lf": 0.2,
     "lambda_struct": 1,
@@ -36,23 +43,18 @@
     "batch_size": 1,
     "shuffle": true,
     "enable_bucket": true,
-    "datasets": [
-      {
-        "cache_directory": "D:\\AI\\None_Z-image-Turbo_trainer\\datasets\\1",
-        "num_repeats": 100,
-        "resolution_limit": 1024
-      }
-    ]
+    "datasets": []
   },
   "advanced": {
     "max_grad_norm": 1,
     "gradient_checkpointing": true,
+    "blocks_to_swap": 0,
     "num_train_epochs": 10,
     "save_every_n_epochs": 1,
     "gradient_accumulation_steps": 4,
     "mixed_precision": "bf16",
     "seed": 42
   },
-  "modified": "2025-12-07T08:24:50.073143",
+  "modified": "2025-12-09T01:09:54.373921",
   "created": "2025-12-04T10:46:26.582307"
 }

@@ -390,6 +390,56 @@ class ModelAdapter(ABC):
         else:
             raise ValueError(f"Unknown reduction: {reduction}")
     
+    def get_required_components(self) -> List[str]:
+        """
+        获取模型必需的组件列表
+        
+        Returns:
+            组件名称列表
+        """
+        return ["transformer", "vae", "text_encoder", "tokenizer", "scheduler"]
+    
+    def validate_model_path(
+        self,
+        model_path,
+        strict: bool = True
+    ) -> Dict[str, Any]:
+        """
+        验证模型路径完整性(默认实现)
+        
+        子类可覆盖以实现自定义检测。
+        
+        Args:
+            model_path: 模型根目录(Path或str)
+            strict: 是否严格检查
+            
+        Returns:
+            检测结果字典
+        """
+        from pathlib import Path
+        model_path = Path(model_path)
+        
+        result = {
+            "valid": True,
+            "components": {},
+            "missing": []
+        }
+        
+        for component in self.get_required_components():
+            comp_path = model_path / component
+            comp_info = {
+                "exists": comp_path.exists(),
+                "has_config": (comp_path / "config.json").exists() if comp_path.exists() else False
+            }
+            
+            result["components"][component] = comp_info
+            
+            if not comp_info["exists"]:
+                result["missing"].append(component)
+                result["valid"] = False
+        
+        return result
+    
     def get_gradient_checkpointing_segments(self) -> Optional[List[str]]:
         """
         获取梯度检查点分段

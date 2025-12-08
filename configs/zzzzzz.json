@@ -1,9 +1,18 @@
 {
   "name": "zzzzzz",
+  "model_type": "longcat",
   "acrf": {
+    "enable_turbo": false,
     "turbo_steps": 8,
     "shift": 3,
-    "jitter_scale": 0.02
+    "jitter_scale": 0.02,
+    "use_dynamic_shifting": true,
+    "base_shift": 0.5,
+    "max_shift": 1.15,
+    "snr_gamma": 5,
+    "snr_floor": 0.1,
+    "use_anchor": true,
+    "use_turbo": false
   },
   "network": {
     "dim": 32,
@@ -19,33 +28,41 @@
     "learning_rate_str": "0.001",
     "weight_decay": 0.003,
     "lr_scheduler": "cosine_with_restarts",
-    "lr_warmup_steps": 1000,
+    "lr_warmup_steps": 500,
     "lr_num_cycles": 1,
     "lambda_fft": 0,
     "lambda_cosine": 0,
+    "loss_mode": "standard",
+    "alpha_hf": 1,
+    "beta_lf": 0.2,
+    "lambda_struct": 1,
+    "lambda_light": 0.5,
+    "lambda_color": 0.3,
+    "lambda_tex": 0.5,
     "snr_gamma": 5
   },
   "dataset": {
-    "batch_size": 4,
-    "shuffle": false,
+    "batch_size": 1,
+    "shuffle": true,
     "enable_bucket": true,
     "datasets": [
       {
-        "cache_directory": "G:\\None_Z-image-Turbo_trainer\\datasets\\20251205-z\\20251205-z",
-        "num_repeats": 10,
-        "resolution_limit": 1536
+        "cache_directory": "D:\\AI\\None_Z-image-Turbo_trainer\\datasets\\1",
+        "num_repeats": 100,
+        "resolution_limit": 1024
       }
     ]
   },
   "advanced": {
     "max_grad_norm": 0,
     "gradient_checkpointing": true,
-    "num_train_epochs": 100,
-    "save_every_n_epochs": 10,
-    "gradient_accumulation_steps": 8,
-    "mixed_precision": "fp16",
+    "blocks_to_swap": 8,
+    "num_train_epochs": 20,
+    "save_every_n_epochs": 1,
+    "gradient_accumulation_steps": 1,
+    "mixed_precision": "bf16",
     "seed": 42
   },
-  "modified": "2025-12-05T22:50:07.098159",
+  "modified": "2025-12-09T01:13:05.308574",
   "created": "2025-12-05T22:50:07.098159"
 }

@@ -8,6 +8,7 @@ export interface TrainingConfig {
   outputName: string
 
   // 模型配置
+  modelType: 'zimage' | 'longcat' | 'flux'  // 模型类型
   modelPath: string
   vaePath: string
   textEncoderPath: string
@@ -55,6 +56,7 @@ export const useTrainingStore = defineStore('training', () => {
   const config = ref<TrainingConfig>({
     outputDir: './output',
     outputName: 'zimage-lora',
+    modelType: 'zimage',
     modelPath: '',
     vaePath: '',
     textEncoderPath: '',

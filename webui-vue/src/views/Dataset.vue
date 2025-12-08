@@ -375,6 +375,15 @@
       width="500px"
     >
       <el-form label-width="auto">
+        <el-form-item label="模型类型">
+          <el-select v-model="cacheModelType" placeholder="请选择模型类型">
+            <el-option label="Z-Image" value="zimage" />
+            <el-option label="LongCat-Image" value="longcat" />
+          </el-select>
+          <div class="cache-model-hint">
+            <span>将使用对应模型的缓存脚本生成 {{ cacheModelType === 'zimage' ? '_zi.safetensors' : '_lc.safetensors' }} 格式的缓存文件</span>
+          </div>
+        </el-form-item>
         <el-form-item label="选择缓存类型">
           <el-checkbox-group v-model="cacheOptions">
             <el-checkbox label="latent">
@@ -416,6 +425,15 @@
       width="500px"
     >
       <el-form label-position="top">
+        <el-form-item label="模型类型">
+          <el-select v-model="cacheModelType" placeholder="请选择模型类型">
+            <el-option label="Z-Image" value="zimage" />
+            <el-option label="LongCat-Image" value="longcat" />
+          </el-select>
+          <div class="cache-model-hint">
+            <span>将清理 {{ cacheModelType === 'zimage' ? '_zi' : '_lc' }} 后缀的缓存文件</span>
+          </div>
+        </el-form-item>
         <el-form-item label="选择清理类型">
           <div class="flex flex-col gap-2">
             <el-checkbox v-model="clearCacheOptions.latent">Latent 缓存</el-checkbox>
@@ -818,7 +836,8 @@ const resizeStatus = ref({
   running: false,
   total: 0,
   completed: 0,
-  current_file: ''
+  current_file: '',
+  errors: [] as string[]
 })
 
 // 分桶计算器相关
@@ -985,6 +1004,7 @@ async function saveCaption() {
 // 缓存生成配置
 const showCacheDialog = ref(false)
 const cacheOptions = ref<string[]>(['latent', 'text'])
+const cacheModelType = ref('zimage')  // 缓存模型类型
 
 // 加载数据集列表
 async function loadLocalDatasets() {
@@ -1164,7 +1184,8 @@ async function confirmGenerateCache() {
       generateLatent: cacheOptions.value.includes('latent'),
       generateText: cacheOptions.value.includes('text'),
       vaePath: trainingStore.config.vaePath,
-      textEncoderPath: trainingStore.config.textEncoderPath
+      textEncoderPath: trainingStore.config.textEncoderPath,
+      modelType: cacheModelType.value  // 使用对话框中选择的模型类型
     })
     
     ElMessage.success('缓存生成任务已启动')
@@ -1198,7 +1219,8 @@ async function startClearCache() {
     const response = await axios.post('/api/cache/clear', {
       datasetPath: currentView.value.path,
       clearLatent: clearCacheOptions.value.latent,
-      clearText: clearCacheOptions.value.text
+      clearText: clearCacheOptions.value.text,
+      modelType: cacheModelType.value  // 使用缓存模型类型
     })
     
     const { deleted, errors } = response.data
@@ -2150,6 +2172,7 @@ function formatSize(bytes: number): string {
       color: var(--text-secondary);
       display: -webkit-box;
       -webkit-line-clamp: 2;
+      line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
       

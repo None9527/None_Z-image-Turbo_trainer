@@ -397,6 +397,9 @@ class MemoryOptimizer:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         
+        # 获取 blocks_to_swap 参数
+        self.blocks_to_swap = config.get('blocks_to_swap', 0)
+        
         # 初始化各个组件
         self.block_swap = BlockSwapManager(
             block_size=config.get('memory_block_size', 512),
@@ -424,10 +427,18 @@ class MemoryOptimizer:
     
     def start(self):
         """启动内存优化器"""
-        if self.enabled and self.config.get('block_swap_enabled', False):
+        if self.blocks_to_swap > 0:
+            logger.info(f"💾 显存优化器已启动 (blocks_to_swap={self.blocks_to_swap})")
+            # 根据 blocks_to_swap 设置更激进的清理阈值
+            self.aggressive_cleanup = True
+            self.cleanup_threshold = max(0.5, 0.8 - self.blocks_to_swap * 0.03)  # 每个 block 降低 3%
+            logger.info(f"  清理阈值: {self.cleanup_threshold:.1%}")
+        elif self.enabled and self.config.get('block_swap_enabled', False):
             self.block_swap.start_monitoring()
+            self.aggressive_cleanup = False
             logger.info("💾 块交换内存优化器已启动")
         else:
+            self.aggressive_cleanup = False
             logger.info("💾 内存优化器已就绪（Block Swap 已禁用）")
     
     def stop(self):
@@ -442,16 +453,19 @@ class MemoryOptimizer:
             return
         
         # 根据显存大小调整清理阈值
-        # 16GB 及以下显卡需要更积极的清理
         if torch.cuda.is_available():
             total_memory = torch.cuda.get_device_properties(0).total_memory
             total_gb = total_memory / (1024**3)
             allocated = torch.cuda.memory_allocated(0)
             usage = allocated / total_memory
             
-            # 16GB 及以下: 90% 时开始清理
-            # 24GB+: 95% 时清理
-            threshold = 0.90 if total_gb < 20 else 0.95
+            # 如果启用了 blocks_to_swap，使用更激进的清理策略
+            if getattr(self, 'aggressive_cleanup', False):
+                threshold = self.cleanup_threshold
+            else:
+                # 16GB 及以下: 90% 时开始清理
+                # 24GB+: 95% 时清理
+                threshold = 0.90 if total_gb < 20 else 0.95
             
             if usage > threshold:
                 torch.cuda.empty_cache()

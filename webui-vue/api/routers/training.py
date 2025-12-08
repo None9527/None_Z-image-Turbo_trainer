@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from core.config import CONFIGS_DIR, OUTPUT_BASE_DIR, MODEL_PATH, SaveConfigRequest, PROJECT_ROOT
+from core.config import CONFIGS_DIR, OUTPUT_BASE_DIR, MODEL_PATH, SaveConfigRequest, PROJECT_ROOT, get_model_path
 from core import state
 
 router = APIRouter(prefix="/api/training", tags=["training"])
@@ -268,13 +268,40 @@ async def get_training_presets():
     ]
     return {"presets": presets}
 
-def check_dataset_cache(config: Dict[str, Any]) -> Dict[str, Any]:
-    """检查数据集缓存状态（同步函数）"""
+def get_cache_suffixes(model_type: str) -> tuple:
+    """获取模型对应的缓存文件后缀
+    
+    Args:
+        model_type: 模型类型 (zimage, longcat)
+    
+    Returns:
+        (latent_suffix_pattern, text_suffix): 
+        - latent_suffix_pattern: latent缓存的glob模式 (如 "_*_zi.safetensors")
+        - text_suffix: text缓存的后缀 (如 "_zi_te.safetensors")
+    """
+    suffixes = {
+        "zimage": ("_*_zi.safetensors", "_zi_te.safetensors"),
+        "longcat": ("_*_lc.safetensors", "_lc_te.safetensors"),
+    }
+    return suffixes.get(model_type, ("_*_zi.safetensors", "_zi_te.safetensors"))
+
+
+    
+def check_dataset_cache(config: Dict[str, Any], model_type: str = "zimage") -> Dict[str, Any]:
+    """检查数据集缓存状态（支持多模型）
+    
+    Args:
+        config: 训练配置
+        model_type: 模型类型 (zimage, longcat, flux)
+    """
     dataset_cfg = config.get("dataset", {})
     datasets = dataset_cfg.get("datasets", [])
     
     if not datasets:
         return {"has_cache": True, "message": "No datasets configured"}
+    
+    # 获取模型对应的缓存后缀
+    latent_pattern, text_suffix = get_cache_suffixes(model_type)
     
     total_images = 0
     latent_cached = 0
@@ -298,12 +325,12 @@ def check_dataset_cache(config: Dict[str, Any]) -> Dict[str, Any]:
                 stem = f.stem
                 parent = f.parent
                 
-                # 检查 latent 缓存
-                if list(parent.glob(f"{stem}_*_zi.safetensors")):
+                # 检查 latent 缓存 (使用动态模式)
+                if list(parent.glob(f"{stem}{latent_pattern}")):
                     latent_cached += 1
                 
-                # 检查 text 缓存 (格式: {name}_zi_te.safetensors)
-                if list(parent.glob(f"{stem}_zi_te.safetensors")):
+                # 检查 text 缓存 (使用动态后缀)
+                if list(parent.glob(f"{stem}{text_suffix}")):
                     text_cached += 1
     
     has_cache = latent_cached > 0 and text_cached > 0
@@ -358,10 +385,13 @@ async def start_training(config: Dict[str, Any]):
                 torch.cuda.empty_cache()
             state.add_log("生成模型已卸载", "info")
         
-        # 检查缓存状态
-        cache_info = check_dataset_cache(config)
+        # 获取模型类型
+        model_type = config.get("model_type", "zimage")
+        
+        # 检查缓存状态(传递model_type)
+        cache_info = check_dataset_cache(config, model_type)
         if not cache_info["has_cache"]:
-            state.add_log(f"缓存不完整: Latent {cache_info['latent_cached']}/{cache_info['total_images']}, Text {cache_info['text_cached']}/{cache_info['total_images']}", "warning")
+            state.add_log(f"缓存不完整 ({model_type}): Latent {cache_info['latent_cached']}/{cache_info['total_images']}, Text {cache_info['text_cached']}/{cache_info['total_images']}", "warning")
             return {
                 "success": False,
                 "needs_cache": True,
@@ -391,8 +421,9 @@ async def start_training(config: Dict[str, Any]):
         python_exe = sys.executable
         mixed_precision = config.get("advanced", {}).get("mixed_precision", "bf16")
         
-        # 根据模型类型选择训练脚本
+        # 根据模型类型选择对应的训练脚本
         if model_type == "zimage":
+            # Z-Image 使用 AC-RF 训练脚本
             train_script = PROJECT_ROOT / "scripts" / "train_acrf.py"
             cmd = [
                 python_exe, "-m", "accelerate.commands.launch",
@@ -400,16 +431,18 @@ async def start_training(config: Dict[str, Any]):
                 str(train_script),
                 "--config", str(config_path)
             ]
-        else:
-            # 使用通用加速训练脚本
-            train_script = PROJECT_ROOT / "scripts" / "train_turbo.py"
+        elif model_type == "longcat":
+            # LongCat-Image 使用独立训练脚本
+            train_script = PROJECT_ROOT / "scripts" / "train_longcat.py"
             cmd = [
                 python_exe, "-m", "accelerate.commands.launch",
                 "--mixed_precision", mixed_precision,
                 str(train_script),
-                "--model_type", model_type,
                 "--config", str(config_path)
             ]
+        else:
+            # 其他模型（未来扩展）
+            raise HTTPException(status_code=400, detail=f"不支持的模型类型: {model_type}")
         
         state.add_log(f"启动命令: {' '.join(cmd)}", "info")
         state.add_log(f"模型类型: {model_type}, 混合精度: {mixed_precision}", "info")
@@ -473,10 +506,11 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         "",
         "[model]",
         f'model_type = "{model_type}"',
-        f'dit = "{str(MODEL_PATH / "transformer").replace(chr(92), "/")}"',
+        f'dit = "{str(get_model_path(model_type, "transformer")).replace(chr(92), "/")}"',
         f'output_dir = "{str(OUTPUT_BASE_DIR).replace(chr(92), "/")}"',
         "",
         "[acrf]",
+        f"enable_turbo = {'true' if config.get('acrf', {}).get('enable_turbo', True) else 'false'}",
         f"turbo_steps = {config.get('acrf', {}).get('turbo_steps', 10)}",
         f"shift = {config.get('acrf', {}).get('shift', 3.0)}",
         f"jitter_scale = {config.get('acrf', {}).get('jitter_scale', 0.02)}",
@@ -484,6 +518,8 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         f"snr_floor = {config.get('acrf', {}).get('snr_floor', 0.1)}",
         f"use_anchor = {'true' if config.get('acrf', {}).get('use_anchor', True) else 'false'}",
         f"use_dynamic_shifting = {'true' if config.get('acrf', {}).get('use_dynamic_shifting', True) else 'false'}",
+        f"base_shift = {config.get('acrf', {}).get('base_shift', 0.5)}",
+        f"max_shift = {config.get('acrf', {}).get('max_shift', 1.15)}",
         "",
         "[lora]",
         f"network_dim = {config.get('network', {}).get('dim', 8)}",
@@ -519,6 +555,7 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         "[advanced]",
         f"max_grad_norm = {config.get('advanced', {}).get('max_grad_norm', 1.0)}",
         f"gradient_checkpointing = {'true' if config.get('advanced', {}).get('gradient_checkpointing', True) else 'false'}",
+        f"blocks_to_swap = {config.get('advanced', {}).get('blocks_to_swap', 0)}",
         "",
         "[optimization]",
         "auto_optimize = true",

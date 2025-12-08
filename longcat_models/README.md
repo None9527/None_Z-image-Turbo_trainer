@@ -8,7 +8,7 @@ library_name: transformers
 ---
 
 <div align="center">
-  <img src="assets/longcat-image_logo.svg" width="45%" alt="LongCat-Image" />
+  <img src="https://github.com/meituan-longcat/LongCat-Flash-Chat/blob/main/figures/longcat_logo.svg" width="45%" alt="LongCat-Image" />
 </div>
 <hr>
 

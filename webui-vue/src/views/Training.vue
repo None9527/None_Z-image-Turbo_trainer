@@ -246,6 +246,10 @@
             <span class="value">{{ currentConfig.advanced?.gradient_checkpointing ? '是' : '否' }}</span>
           </div>
           <div class="preview-item">
+            <span class="label">Blocks to Swap</span>
+            <span class="value">{{ currentConfig.advanced?.blocks_to_swap ?? 0 }}</span>
+          </div>
+          <div class="preview-item">
             <span class="label">随机种子</span>
             <span class="value">{{ currentConfig.advanced?.seed ?? 42 }}</span>
           </div>

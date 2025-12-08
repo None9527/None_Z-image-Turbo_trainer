@@ -1,11 +1,17 @@
 {
   "name": "111",
+  "model_type": "zimage",
   "acrf": {
+    "enable_turbo": true,
     "turbo_steps": 8,
     "shift": 3,
     "jitter_scale": 0.02,
+    "use_dynamic_shifting": true,
+    "base_shift": 0.5,
+    "max_shift": 1.15,
     "snr_gamma": 5,
-    "snr_floor": 0.1
+    "snr_floor": 0.1,
+    "use_anchor": true
   },
   "network": {
     "dim": 16,
@@ -70,6 +76,6 @@
     "lambda_fft": 0.05,
     "lambda_lpips": 0.5
   },
-  "modified": "2025-12-08T12:09:58.995357",
+  "modified": "2025-12-08T23:38:07.508445",
   "created": "2025-12-04T13:30:22.388187"
 }

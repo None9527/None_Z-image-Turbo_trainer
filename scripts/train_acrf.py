@@ -13,6 +13,8 @@
 import os
 import sys
 import math
+import signal
+import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
 
 import torch
@@ -37,6 +39,19 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# 全局中断标志
+_interrupted = False
+
+def signal_handler(signum, frame):
+    """信号处理器"""
+    global _interrupted
+    _interrupted = True
+    logger.info("\n[STOP] 收到停止信号，将在当前步骤完成后保存并退出...")
+
+# 注册信号处理器
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 
 def parse_args():
@@ -116,6 +131,9 @@ def parse_args():
     # 高级功能
     parser.add_argument("--max_grad_norm", type=float, default=1.0, help="梯度裁剪阈值")
     parser.add_argument("--gradient_checkpointing", action="store_true", help="启用梯度检查点")
+    parser.add_argument("--blocks_to_swap", type=int, default=0, 
+        help="将多少个 transformer blocks 交换到 CPU，节省显存。"
+             "16G显存建议设为 4-8，24G显存可不设置")
     
     # 自动优化功能
     parser.add_argument("--auto_optimize", action="store_true", default=True, help="启用自动硬件优化")
@@ -375,8 +393,11 @@ def main():
     
     # 初始化内存优化器
     logger.info(f"\n[MEM] 初始化内存优化器...")
+    if args.blocks_to_swap > 0:
+        logger.info(f"  Blocks to swap: {args.blocks_to_swap}")
     memory_config = {
-        'block_swap_enabled': args.block_swap_enabled,
+        'block_swap_enabled': args.block_swap_enabled or args.blocks_to_swap > 0,
+        'blocks_to_swap': args.blocks_to_swap,
         'memory_block_size': args.block_swap_block_size,
         'cpu_swap_buffer_size': args.block_swap_cpu_buffer_size,
         'swap_threshold': args.block_swap_swap_threshold,
@@ -728,6 +749,17 @@ def main():
                 
             # 执行内存优化 (清理缓存等)
             memory_optimizer.optimize_training_step()
+            
+            # 检查中断信号
+            if _interrupted:
+                logger.info(f"\n[STOP] 中断训练，保存当前进度...")
+                interrupt_path = Path(args.output_dir) / f"{args.output_name}_interrupted_step{global_step}.safetensors"
+                network.save_weights(interrupt_path, dtype=weight_dtype)
+                logger.info(f"[SAVE] 已保存中断检查点: {interrupt_path}")
+                memory_optimizer.stop()
+                logger.info("[EXIT] 5秒后退出进程...")
+                time.sleep(5)
+                os._exit(0)
                 
         # Epoch 结束，保存检查点
         if (epoch + 1) % args.save_every_n_epochs == 0:
@@ -739,13 +771,24 @@ def main():
     final_path = Path(args.output_dir) / f"{args.output_name}_final.safetensors"
     network.save_weights(final_path, dtype=weight_dtype)
     
-    # 停止内存优化器
+    # 停止内存优化器并清理显存
     memory_optimizer.stop()
+    
+    # 清理 GPU 缓存
+    del network, transformer, optimizer, lr_scheduler, dataloader
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        gc.collect()
     
     logger.info("\n" + "="*60)
     logger.info(f"[OK] 训练完成！")
     logger.info(f"最终模型: {final_path}")
     logger.info("="*60)
+    
+    # 5秒后强制退出进程，确保显存释放
+    logger.info("\n[EXIT] 5秒后退出进程...")
+    time.sleep(5)
+    os._exit(0)
 
 
 if __name__ == "__main__":

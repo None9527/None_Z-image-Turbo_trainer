@@ -136,10 +136,11 @@ class LongCatAdapter(ModelAdapter):
             ignore_mismatched_sizes=False,
         )
         
-        transformer = transformer.to(device)
+        # 确保模型转换到正确的精度
+        transformer = transformer.to(device=device, dtype=dtype)
         self._transformer = transformer
         
-        logger.info(f"LongCat-Image transformer loaded on {device}")
+        logger.info(f"LongCat-Image transformer loaded on {device} with dtype {dtype}")
         return transformer
     
     def load_vae(

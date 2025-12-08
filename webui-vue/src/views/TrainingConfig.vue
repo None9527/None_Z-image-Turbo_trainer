@@ -53,7 +53,7 @@
             <div class="collapse-title">
               <el-icon><Cpu /></el-icon>
               <span>模型类型</span>
-              <el-tag :type="modelTagType" size="small" style="margin-left: 10px">{{ modelDisplayName }}</el-tag>
+              <el-tag :type="(modelTagType as 'primary' | 'success' | 'warning' | 'info' | 'danger')" size="small" style="margin-left: 10px">{{ modelDisplayName }}</el-tag>
             </div>
           </template>
           <div class="collapse-content">
@@ -69,33 +69,34 @@
                   <div class="model-name">{{ model.label }}</div>
                   <div class="model-desc">{{ model.description }}</div>
                 </div>
-                <el-tag v-if="model.tag" :type="model.tagType" size="small">{{ model.tag }}</el-tag>
+                <el-tag v-if="model.tag" :type="(model.tagType as 'primary' | 'success' | 'warning' | 'info' | 'danger')" size="small">{{ model.tag }}</el-tag>
               </div>
             </div>
-            <el-alert 
-              v-if="config.model_type === 'longcat'" 
-              type="info" 
-              :closable="false"
-              show-icon
-              style="margin-top: 12px"
-            >
-              <template #title>
-                LongCat-Image 需要配置模型路径
-              </template>
-            </el-alert>
           </div>
         </el-collapse-item>
 
-        <!-- 2. AC-RF 参数 -->
+        <!-- 2. 模型专属参数（根据模型类型显示） -->
         <el-collapse-item name="acrf">
           <template #title>
             <div class="collapse-title">
               <el-icon><DataAnalysis /></el-icon>
-              <span>AC-RF 参数</span>
+              <span>{{ config.model_type === 'zimage' ? 'Zimage 参数' : 'Longcat 参数' }}</span>
             </div>
           </template>
           <div class="collapse-content">
+            <!-- Turbo 开关（两个模型都有） -->
             <div class="control-row">
+              <span class="label">
+                启用 Turbo
+                <el-tooltip content="开启后使用加速推理模式，关闭则使用标准推理" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-switch v-model="config.acrf.enable_turbo" />
+            </div>
+            
+            <!-- Turbo 步数（启用 Turbo 时显示） -->
+            <div class="control-row" v-if="config.acrf.enable_turbo">
               <span class="label">
                 Turbo 步数
                 <el-tooltip content="生成时用多少步，这里就写多少步" placement="top">
@@ -105,6 +106,63 @@
               <el-slider v-model="config.acrf.turbo_steps" :min="1" :max="10" :step="1" :show-tooltip="false" class="slider-flex" />
               <el-input-number v-model="config.acrf.turbo_steps" :min="1" :max="10" :step="1" controls-position="right" class="input-fixed" />
             </div>
+
+            <!-- ============ Zimage 特有参数 ============ -->
+            <template v-if="config.model_type === 'zimage'">
+              <div class="control-row">
+                <span class="label">
+                  Shift
+                  <el-tooltip content="时间步偏移，影响噪声调度，默认 3.0" placement="top">
+                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-slider v-model="config.acrf.shift" :min="1" :max="5" :step="0.1" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.acrf.shift" :min="1" :max="5" :step="0.1" controls-position="right" class="input-fixed" />
+              </div>
+              <div class="control-row">
+                <span class="label">
+                  Jitter Scale
+                  <el-tooltip content="时间步抖动幅度，增加训练多样性，0=关闭" placement="top">
+                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-slider v-model="config.acrf.jitter_scale" :min="0" :max="0.1" :step="0.01" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.acrf.jitter_scale" :min="0" :max="0.1" :step="0.01" controls-position="right" class="input-fixed" />
+              </div>
+            </template>
+
+            <!-- ============ Longcat 特有参数 ============ -->
+            <template v-if="config.model_type === 'longcat'">
+              <div class="control-row">
+                <span class="label">
+                  动态 Shift
+                  <el-tooltip content="根据图像序列长度自动调整 shift 值，推荐开启" placement="top">
+                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-switch v-model="config.acrf.use_dynamic_shifting" />
+              </div>
+              <div class="control-row">
+                <span class="label">
+                  Base Shift
+                  <el-tooltip content="动态 shift 的基础值，对应小图（默认 0.5）" placement="top">
+                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-slider v-model="config.acrf.base_shift" :min="0.1" :max="2" :step="0.05" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.acrf.base_shift" :min="0.1" :max="2" :step="0.05" controls-position="right" class="input-fixed" />
+              </div>
+              <div class="control-row">
+                <span class="label">
+                  Max Shift
+                  <el-tooltip content="动态 shift 的最大值，对应大图（默认 1.15）" placement="top">
+                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-slider v-model="config.acrf.max_shift" :min="0.5" :max="3" :step="0.05" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.acrf.max_shift" :min="0.5" :max="3" :step="0.05" controls-position="right" class="input-fixed" />
+              </div>
+            </template>
           </div>
         </el-collapse-item>
 
@@ -264,6 +322,15 @@
               </span>
               <el-switch v-model="config.advanced.gradient_checkpointing" />
             </div>
+            <div class="control-row">
+              <span class="label">
+                Blocks to Swap
+                <el-tooltip content="将transformer blocks交换到CPU节省显存。16G显存建议4-8，24G可不设置" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-input-number v-model="config.advanced.blocks_to_swap" :min="0" :max="20" controls-position="right" style="width: 150px" />
+            </div>
             <div class="form-row-full">
               <label>
                 混合精度
@@ -388,27 +455,7 @@
             </div>
           </template>
           <div class="collapse-content">
-            <div class="subsection-label">AC-RF 高级参数</div>
-            <div class="control-row">
-              <span class="label">
-                Shift
-                <el-tooltip content="时间步偏移，影响噪声调度，一般不用改" placement="top">
-                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                </el-tooltip>
-              </span>
-              <el-slider v-model="config.acrf.shift" :min="1" :max="5" :step="0.1" :show-tooltip="false" class="slider-flex" />
-              <el-input-number v-model="config.acrf.shift" :min="1" :max="5" :step="0.1" controls-position="right" class="input-fixed" />
-            </div>
-            <div class="control-row">
-              <span class="label">
-                Jitter Scale
-                <el-tooltip content="时间步抖动幅度，增加训练多样性，0=关闭" placement="top">
-                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                </el-tooltip>
-              </span>
-              <el-slider v-model="config.acrf.jitter_scale" :min="0" :max="0.1" :step="0.01" :show-tooltip="false" class="slider-flex" />
-              <el-input-number v-model="config.acrf.jitter_scale" :min="0" :max="0.1" :step="0.01" controls-position="right" class="input-fixed" />
-            </div>
+            <div class="subsection-label">SNR 参数（公用）</div>
             <div class="control-row">
               <span class="label">
                 SNR Gamma
@@ -603,7 +650,17 @@ const systemPaths = ref({
 })
 
 // 可用模型列表
-const availableModels = ref([
+type TagType = 'primary' | 'success' | 'warning' | 'info' | 'danger'
+
+const availableModels = ref<Array<{
+  value: string
+  label: string
+  icon: string
+  description: string
+  tag: string
+  tagType: TagType
+  disabled: boolean
+}>>([
   {
     value: 'zimage',
     label: 'Z-Image (Turbo)',
@@ -630,7 +687,7 @@ const modelDisplayName = computed(() => {
   return model?.label || 'Z-Image'
 })
 
-const modelTagType = computed(() => {
+const modelTagType = computed((): TagType => {
   const model = availableModels.value.find(m => m.value === config.value.model_type)
   return model?.tagType || 'primary'
 })
@@ -645,14 +702,19 @@ function getDefaultConfig() {
     name: 'default',
     model_type: 'zimage',  // 模型类型
     acrf: {
+      enable_turbo: true,  // Turbo 开关
       turbo_steps: 10,
+      // Zimage 参数
       shift: 3.0,
       jitter_scale: 0.02,
-      // Min-SNR 加权参数（所有 loss 模式通用）
+      // Longcat 动态 shift 参数
+      use_dynamic_shifting: true,
+      base_shift: 0.5,
+      max_shift: 1.15,
+      // Min-SNR 加权参数（公用）
       snr_gamma: 5.0,
       snr_floor: 0.1,
-      use_anchor: true,
-      use_dynamic_shifting: true
+      use_anchor: true
     },
     network: {
       dim: 8,
@@ -693,6 +755,7 @@ function getDefaultConfig() {
     advanced: {
       max_grad_norm: 1.0,
       gradient_checkpointing: true,
+      blocks_to_swap: 0,
       num_train_epochs: 10,
       save_every_n_epochs: 1,
       gradient_accumulation_steps: 4,

@@ -98,7 +98,7 @@ class ConnectionManager:
                     )
                 
                 # 读取下载进程输出
-                if state.download_process and state.download_process.poll() is None:
+                if state.download_process:
                     await self._read_process_output(
                         state.download_process, "download_log", parse_download_progress
                     )
@@ -472,7 +472,23 @@ def parse_download_progress(line: str) -> Optional[Dict[str, Any]]:
     """解析下载进度信息"""
     import re
     
-    # 优先匹配新格式: [PROGRESS] [...] 50.0% | 16.00 GB/32.00 GB | 10.5 MB/s
+    # 匹配新格式: [PROGRESS] 50.0% | 16.00 GB / 32.00 GB | 10.5 MB/s
+    simple_progress = re.search(
+        r'\[PROGRESS\]\s*(\d+(?:\.\d+)?)%\s*\|\s*([0-9.]+)\s*GB\s*/\s*([0-9.]+)\s*GB\s*\|\s*([0-9.]+)\s*MB/s',
+        line, re.IGNORECASE
+    )
+    if simple_progress:
+        return {
+            "type": "total_progress",
+            "percent": float(simple_progress.group(1)),
+            "downloaded_gb": float(simple_progress.group(2)),
+            "total_gb": float(simple_progress.group(3)),
+            "speed": float(simple_progress.group(4)),
+            "speed_unit": "MB"
+        }
+    
+    # 匹配旧格式: [PROGRESS] [...] 50.0% | 16.00 GB/32.00 GB | 10.5 MB/s | 下载中...
+    # 使用非贪婪匹配,支持中文状态描述
     progress_match = re.search(
         r'\[PROGRESS\].*?(\d+(?:\.\d+)?)%\s*\|\s*([0-9.]+)\s*(MB|GB)/([0-9.]+)\s*(MB|GB)\s*\|\s*([0-9.]+)\s*(MB|KB)/s',
         line, re.IGNORECASE
@@ -758,7 +774,7 @@ def get_download_status() -> Dict[str, Any]:
     return_code = state.download_process.poll()
     
     if return_code is None:
-        # 从 state 获取下载进度
+        # 进程运行中 - 从 state 获取下载进度
         dp = state.get_download_progress()
         
         return {
@@ -772,12 +788,10 @@ def get_download_status() -> Dict[str, Any]:
             "model_name": dp.get("model_name", "")
         }
     elif return_code == 0:
-        state.download_process = None
-        state.reset_download_progress()
+        # 进程成功退出 - 标记为完成
         return {"status": "completed", "progress": 100}
     else:
-        state.download_process = None
-        state.reset_download_progress()
+        # 进程失败退出
         return {"status": "failed", "code": return_code}
 
 

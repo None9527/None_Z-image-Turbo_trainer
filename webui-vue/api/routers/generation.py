@@ -5,36 +5,90 @@ from datetime import datetime
 import json
 import io
 import base64
+import sys
 import torch
 from pathlib import Path
 from PIL import Image
 import os
 
-from core.config import OUTPUTS_DIR, PROJECT_ROOT, GenerationRequest, DeleteHistoryRequest, LORA_PATH
+from core.config import OUTPUTS_DIR, PROJECT_ROOT, GenerationRequest, DeleteHistoryRequest, LORA_PATH, get_model_path
 from core import state
 from routers.websocket import sync_broadcast_generation_progress
 
-# Compatibility shim for older diffusers versions with newer huggingface_hub
-import huggingface_hub
-try:
-    from huggingface_hub import cached_download
-except ImportError:
-    # hf_hub_download is the new replacement, but cached_download signature might differ slightly
-    # usually this is enough for simple cases
-    from huggingface_hub import hf_hub_download
-    huggingface_hub.cached_download = hf_hub_download
+# 添加src到路径以使用models抽象层
+if str(PROJECT_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+# 导入模型适配器注册表
+from models.registry import get_adapter, list_adapters
 
-router = APIRouter(tags=["generation"])
+router = APIRouter(prefix="/api", tags=["generation"])
 
-@router.get("/api/loras")
+def load_pipeline_with_adapter(model_type: str):
+    """使用抽象层加载本地模型 Pipeline"""
+    model_path = get_model_path(model_type, "base")
+    
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model not found at: {model_path}")
+    
+    dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float32
+    
+    # 使用抽象层检测是否使用 local_files_only
+    if model_type == "zimage":
+        from diffusers import ZImagePipeline
+        pipe = ZImagePipeline.from_pretrained(
+            str(model_path),
+            torch_dtype=dtype,
+            local_files_only=True,  # 强制使用本地模型
+        )
+    elif model_type == "longcat":
+        from diffusers import FluxPipeline
+        pipe = FluxPipeline.from_pretrained(
+            str(model_path),
+            torch_dtype=dtype,
+            local_files_only=True,  # 强制使用本地模型
+        )
+    else:
+        raise ValueError(f"Unsupported model type: {model_type}")
+    
+    if torch.cuda.is_available():
+        pipe.to("cuda")
+    pipe.enable_model_cpu_offload()
+    
+    return pipe
+
+@router.get("/generation/models")
+async def get_available_models():
+    """获取可用的生成模型列表"""
+    models = []
+    
+    for model_type in ["zimage", "longcat"]:
+        model_path = get_model_path(model_type, "base")
+        model_info = {
+            "type": model_type,
+            "name": "Z-Image Turbo" if model_type == "zimage" else "LongCat Image",
+            "path": str(model_path),
+            "exists": model_path.exists(),
+            "loaded": state.get_pipeline(model_type) is not None,
+        }
+        
+        # 检查必要组件
+        if model_path.exists():
+            components = ["vae", "text_encoder", "transformer", "scheduler"]
+            model_info["components"] = {}
+            for comp in components:
+                comp_path = model_path / comp
+                model_info["components"][comp] = comp_path.exists()
+        
+        models.append(model_info)
+    
+    return {"models": models}
+
+@router.get("/loras")
 async def get_loras():
     """Scan for LoRA models in LORA_PATH directory"""
     loras = []
     
-    if not LORA_PATH.exists():
-        return []
-        
     for root, _, files in os.walk(LORA_PATH):
         for file in files:
             if file.endswith(".safetensors"):
@@ -48,7 +102,7 @@ async def get_loras():
     
     return sorted(loras, key=lambda x: x["name"])
 
-@router.get("/api/loras/download")
+@router.get("/loras/download")
 async def download_lora(path: str):
     """Download a LoRA model file"""
     file_path = Path(path)
@@ -71,7 +125,7 @@ async def download_lora(path: str):
         media_type="application/octet-stream"
     )
 
-@router.delete("/api/loras/delete")
+@router.delete("/loras/delete")
 async def delete_lora(path: str):
     """Delete a LoRA model file"""
     file_path = Path(path)
@@ -94,7 +148,111 @@ async def delete_lora(path: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete: {str(e)}")
 
-@router.post("/api/generate-stream")
+@router.post("/generate")
+async def generate_image(req: GenerationRequest):
+    """生成图片 - 同步版本，支持多模型"""
+    
+    try:
+        model_type = req.model_type.lower()
+        pipe = state.get_pipeline(model_type)
+        
+        # 使用抽象层加载本地模型
+        if pipe is None:
+            pipe = load_pipeline_with_adapter(model_type)
+            state.set_pipeline(model_type, pipe)
+        
+        # LoRA handling (每个模型独立管理)
+        current_lora = state.get_lora_path(model_type)
+        if req.lora_path:
+            if current_lora != req.lora_path:
+                if current_lora:
+                    try:
+                        pipe.unload_lora_weights()
+                    except:
+                        pass
+                pipe.load_lora_weights(req.lora_path)
+                state.set_lora_path(model_type, req.lora_path)
+        else:
+            if current_lora:
+                try:
+                    pipe.unload_lora_weights()
+                except:
+                    pass
+                state.set_lora_path(model_type, None)
+        
+        # Seed
+        generator = None
+        actual_seed = req.seed
+        if actual_seed != -1:
+            generator = torch.Generator("cuda" if torch.cuda.is_available() else "cpu").manual_seed(actual_seed)
+        else:
+            generator = torch.Generator("cuda" if torch.cuda.is_available() else "cpu")
+            actual_seed = generator.seed()
+        
+        if req.lora_path:
+            pipe.cross_attention_kwargs = {"scale": req.lora_scale}
+        
+        # 根据模型类型调用不同的生成接口
+        if model_type == "zimage":
+            image = pipe(
+                prompt=req.prompt,
+                negative_prompt=req.negative_prompt,
+                num_inference_steps=req.steps,
+                guidance_scale=req.guidance_scale,
+                width=req.width,
+                height=req.height,
+                generator=generator,
+            ).images[0]
+        elif model_type == "longcat":
+            # LongCat/FLUX 使用不同的参数
+            image = pipe(
+                prompt=req.prompt,
+                num_inference_steps=req.steps,
+                guidance_scale=req.guidance_scale,
+                width=req.width,
+                height=req.height,
+                generator=generator,
+            ).images[0]
+        
+        if pipe:
+            pipe.cross_attention_kwargs = None
+        
+        # Save
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        generated_dir = OUTPUTS_DIR / "generated"
+        generated_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{timestamp}.png"
+        image_path = generated_dir / filename
+        image.save(image_path)
+        
+        # Metadata (包含模型类型)
+        metadata = req.dict()
+        metadata["timestamp"] = timestamp
+        metadata["seed"] = actual_seed
+        with open(generated_dir / f"{timestamp}.json", "w", encoding="utf-8") as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+        
+        # Base64
+        buffered = io.BytesIO()
+        image.save(buffered, format="PNG")
+        img_base64 = base64.b64encode(buffered.getvalue()).decode()
+        
+        return {
+            "success": True,
+            "image": f"data:image/png;base64,{img_base64}",
+            "filename": filename,
+            "timestamp": timestamp,
+            "seed": actual_seed,
+            "model_type": model_type
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "message": str(e)}
+
+
+@router.post("/generate-stream")
 async def generate_image_stream(req: GenerationRequest):
     """Generate image with streaming progress updates (SSE)"""
     from fastapi.responses import StreamingResponse
@@ -107,42 +265,37 @@ async def generate_image_stream(req: GenerationRequest):
     result_holder = {"result": None, "error": None}
     
     def do_generate_with_queue():
-        """在线程中执行生成，通过队列发送进度"""
-        from diffusers import ZImagePipeline
+        """Execute generation in thread, send progress through queue"""
         
         try:
-            progress_queue.put({"stage": "loading", "step": 0, "total": req.steps, "message": "Loading model..."})
+            model_type = req.model_type.lower()
+            progress_queue.put({"stage": "loading", "step": 0, "total": req.steps, "message": f"Loading {model_type} model..."})
             
-            # Load model if not loaded
-            if state.pipeline is None:
-                from core.config import MODEL_PATH
-                if not MODEL_PATH.exists():
-                    raise Exception("Model not found")
-                state.pipeline = ZImagePipeline.from_pretrained(
-                    str(MODEL_PATH),
-                    torch_dtype=torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float32,
-                )
-                if torch.cuda.is_available():
-                    state.pipeline.to("cuda")
-                state.pipeline.enable_model_cpu_offload()
+            pipe = state.get_pipeline(model_type)
             
-            # LoRA handling
+            # 使用抽象层加载本地模型
+            if pipe is None:
+                pipe = load_pipeline_with_adapter(model_type)
+                state.set_pipeline(model_type, pipe)
+            
+            # LoRA handling (每个模型独立管理)
+            current_lora = state.get_lora_path(model_type)
             if req.lora_path:
-                if state.current_lora_path != req.lora_path:
-                    if state.current_lora_path:
+                if current_lora != req.lora_path:
+                    if current_lora:
                         try:
-                            state.pipeline.unload_lora_weights()
+                            pipe.unload_lora_weights()
                         except:
                             pass
-                    state.pipeline.load_lora_weights(req.lora_path)
-                    state.current_lora_path = req.lora_path
+                    pipe.load_lora_weights(req.lora_path)
+                    state.set_lora_path(model_type, req.lora_path)
             else:
-                if state.current_lora_path:
+                if current_lora:
                     try:
-                        state.pipeline.unload_lora_weights()
+                        pipe.unload_lora_weights()
                     except:
                         pass
-                    state.current_lora_path = None
+                    state.set_lora_path(model_type, None)
             
             # Seed
             generator = None
@@ -154,7 +307,7 @@ async def generate_image_stream(req: GenerationRequest):
                 actual_seed = generator.seed()
             
             # Progress callback
-            def progress_callback(pipe, step_index, timestep, callback_kwargs):
+            def progress_callback(pipe_instance, step_index, timestep, callback_kwargs):
                 step = step_index + 1
                 progress_queue.put({"stage": "generating", "step": step, "total": req.steps, "message": f"Step {step}/{req.steps}"})
                 return callback_kwargs
@@ -162,21 +315,33 @@ async def generate_image_stream(req: GenerationRequest):
             progress_queue.put({"stage": "generating", "step": 0, "total": req.steps, "message": "Starting..."})
             
             if req.lora_path:
-                state.pipeline.cross_attention_kwargs = {"scale": req.lora_scale}
+                pipe.cross_attention_kwargs = {"scale": req.lora_scale}
             
-            image = state.pipeline(
-                prompt=req.prompt,
-                negative_prompt=req.negative_prompt,
-                num_inference_steps=req.steps,
-                guidance_scale=req.guidance_scale,
-                width=req.width,
-                height=req.height,
-                generator=generator,
-                callback_on_step_end=progress_callback,
-            ).images[0]
+            # 根据模型类型调用不同的生成接口
+            if model_type == "zimage":
+                image = pipe(
+                    prompt=req.prompt,
+                    negative_prompt=req.negative_prompt,
+                    num_inference_steps=req.steps,
+                    guidance_scale=req.guidance_scale,
+                    width=req.width,
+                    height=req.height,
+                    generator=generator,
+                    callback_on_step_end=progress_callback,
+                ).images[0]
+            elif model_type == "longcat":
+                image = pipe(
+                    prompt=req.prompt,
+                    num_inference_steps=req.steps,
+                    guidance_scale=req.guidance_scale,
+                    width=req.width,
+                    height=req.height,
+                    generator=generator,
+                    callback_on_step_end=progress_callback,
+                ).images[0]
             
-            if state.pipeline:
-                state.pipeline.cross_attention_kwargs = None
+            if pipe:
+                pipe.cross_attention_kwargs = None
             
             progress_queue.put({"stage": "saving", "step": req.steps, "total": req.steps, "message": "Saving..."})
             
@@ -188,7 +353,7 @@ async def generate_image_stream(req: GenerationRequest):
             image_path = generated_dir / filename
             image.save(image_path)
             
-            # Metadata
+            # Metadata (包含模型类型)
             metadata = req.dict()
             metadata["timestamp"] = timestamp
             metadata["seed"] = actual_seed
@@ -198,412 +363,134 @@ async def generate_image_stream(req: GenerationRequest):
             # Base64
             buffered = io.BytesIO()
             image.save(buffered, format="PNG")
-            img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            img_base64 = base64.b64encode(buffered.getvalue()).decode()
             
             result_holder["result"] = {
                 "success": True,
-                "image": f"data:image/png;base64,{img_str}",
-                "url": f"/outputs/generated/{filename}",
-                "seed": actual_seed
+                "image": img_base64,
+                "filename": filename,
+                "timestamp": timestamp,
+                "seed": actual_seed,
+                "model_type": model_type
             }
-            progress_queue.put({"stage": "completed", "step": req.steps, "total": req.steps, "message": "Done!"})
+            
+            progress_queue.put({"stage": "completed", "step": req.steps, "total": req.steps, "message": "Completed!"})
             
         except Exception as e:
-            import traceback
-            traceback.print_exc()
             result_holder["error"] = str(e)
-            progress_queue.put({"stage": "failed", "step": 0, "total": req.steps, "message": str(e)})
+            progress_queue.put({"stage": "error", "step": 0, "total": req.steps, "message": f"Error: {str(e)}"})
+        finally:
+            progress_queue.put(None)  # End signal
     
-    async def event_generator():
-        # Start generation in thread
+    def generate_sse():
+        """Generate Server-Sent Events"""
         thread = threading.Thread(target=do_generate_with_queue)
         thread.start()
         
-        while True:
-            try:
-                # Non-blocking check
-                try:
-                    progress = progress_queue.get_nowait()
-                    yield f"data: {json.dumps(progress)}\n\n"
-                    if progress["stage"] in ("completed", "failed"):
-                        # 等待线程完成以确保结果已设置
-                        thread.join(timeout=5)
-                        # Send final result
-                        if result_holder["result"]:
-                            yield f"data: {json.dumps(result_holder['result'])}\n\n"
-                        elif result_holder["error"]:
-                            yield f"data: {json.dumps({'error': result_holder['error']})}\n\n"
-                        break
-                except queue.Empty:
-                    pass
-                await asyncio.sleep(0.05)
-            except Exception as e:
-                yield f"data: {json.dumps({'error': str(e)})}\n\n"
-                break
-        
-        thread.join(timeout=1)
-    
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
-
-
-@router.post("/api/generate")
-async def generate_image(req: GenerationRequest):
-    """Generate image using Z-Image model"""
-    import asyncio
-    import concurrent.futures
-    
-    # 立即更新状态（在主线程中），确保轮询能立刻看到
-    state.generation_status["running"] = True
-    state.generation_status["stage"] = "loading"
-    state.generation_status["current_step"] = 0
-    state.generation_status["total_steps"] = req.steps
-    state.generation_status["progress"] = 0
-    state.generation_status["message"] = "Initializing..."
-    state.generation_status["error"] = None
-    print(f"[Generation] Started - status set to running")
-    
-    # 在线程池中执行耗时操作
-    loop = asyncio.get_event_loop()
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    
-    def do_generate():
-        """在线程中执行的生成函数"""
-        from diffusers import ZImagePipeline
-        
-        # 更新状态：开始加载
-        print(f"[Generation] Thread started - loading model")
-        sync_broadcast_generation_progress(0, req.steps, "loading", "Loading model...")
-        
-        # Load model if not loaded
-        if state.pipeline is None:
-            from core.config import MODEL_PATH
-            model_path = MODEL_PATH
-            if not model_path.exists():
-                raise Exception("Model not found. Please download it first.")
-            
-            print(f"Loading model from {model_path}...")
-            state.pipeline = ZImagePipeline.from_pretrained(
-                str(model_path),
-                torch_dtype=torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float32,
-            )
-            if torch.cuda.is_available():
-                state.pipeline.to("cuda")
-            state.pipeline.enable_model_cpu_offload()
-            print("Model loaded successfully.")
-
-        # Set seed
-        generator = None
-        actual_seed = req.seed
-        if actual_seed != -1:
-            generator = torch.Generator("cuda" if torch.cuda.is_available() else "cpu").manual_seed(actual_seed)
-        else:
-            generator = torch.Generator("cuda" if torch.cuda.is_available() else "cpu")
-            actual_seed = generator.seed()
-
-        # 进度回调函数
-        def progress_callback(pipe, step_index, timestep, callback_kwargs):
-            """Pipeline 进度回调"""
-            total_steps = req.steps
-            current_step = step_index + 1
-            print(f"[Progress Callback] Step {current_step}/{total_steps}")
-            
-            # 直接更新状态
-            state.generation_status["running"] = True
-            state.generation_status["current_step"] = current_step
-            state.generation_status["total_steps"] = total_steps
-            state.generation_status["progress"] = round(current_step / total_steps * 100, 1)
-            state.generation_status["stage"] = "generating"
-            state.generation_status["message"] = f"Step {current_step}/{total_steps}"
-            
-            # 也通过广播发送
-            sync_broadcast_generation_progress(
-                current_step=current_step,
-                total_steps=total_steps,
-                stage="generating",
-                message=f"Step {current_step}/{total_steps}"
-            )
-            return callback_kwargs
-        
-        # Helper for generation
-        def run_inference(prompt, seed_generator, lora_scale=0.0):
-            # 设置 LoRA 权重 (使用 set_adapters 而不是 cross_attention_kwargs)
-            if req.lora_path and state.current_lora_path:
-                try:
-                    # 获取已加载的 adapter 名称
-                    # get_list_adapters() 返回 {'transformer': ['default_0'], ...}
-                    # 我们需要提取实际的 adapter 名称列表
-                    if hasattr(state.pipeline, 'get_list_adapters'):
-                        adapters_dict = state.pipeline.get_list_adapters()
-                        # 提取所有 adapter 名称 (通常是 'default_0')
-                        adapter_names = []
-                        for component_adapters in adapters_dict.values():
-                            adapter_names.extend(component_adapters)
-                        adapter_names = list(set(adapter_names))  # 去重
-                        
-                        if adapter_names:
-                            # 为每个 adapter 设置相同的权重
-                            weights = [lora_scale] * len(adapter_names)
-                            state.pipeline.set_adapters(adapter_names, adapter_weights=weights)
-                            print(f"[LoRA] Set adapters {adapter_names} scale to {lora_scale}")
-                        else:
-                            state.pipeline.cross_attention_kwargs = {"scale": lora_scale}
-                    else:
-                        state.pipeline.cross_attention_kwargs = {"scale": lora_scale}
-                except Exception as e:
-                    print(f"[LoRA] Failed to set adapter scale: {e}, using cross_attention_kwargs")
-                    state.pipeline.cross_attention_kwargs = {"scale": lora_scale}
-            
-            return state.pipeline(
-                prompt=prompt,
-                negative_prompt=req.negative_prompt,
-                num_inference_steps=req.steps,
-                guidance_scale=req.guidance_scale,
-                width=req.width,
-                height=req.height,
-                generator=seed_generator,
-                callback_on_step_end=progress_callback,
-            ).images[0]
-
-        # 智能 LoRA 管理
-        if req.lora_path:
-            # 需要 LoRA
-            if state.current_lora_path != req.lora_path:
-                # LoRA 变化了，需要切换
-                if state.current_lora_path:
-                    # 先卸载旧的 LoRA
-                    print(f"Unloading previous LoRA: {state.current_lora_path}")
-                    try:
-                        state.pipeline.unload_lora_weights()
-                    except Exception:
-                        pass
-                
-                # 加载新的 LoRA
-                print(f"Loading LoRA: {req.lora_path}")
-                try:
-                    state.pipeline.load_lora_weights(req.lora_path)
-                    state.current_lora_path = req.lora_path
-                    # 打印已加载的 adapters
-                    if hasattr(state.pipeline, 'get_list_adapters'):
-                        adapters = state.pipeline.get_list_adapters()
-                        print(f"[LoRA] Loaded adapters: {adapters}")
-                except Exception as e:
-                    state.current_lora_path = None
-                    print(f"Failed to load LoRA: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    raise Exception(f"Failed to load LoRA: {str(e)}")
-            else:
-                print(f"LoRA already loaded: {req.lora_path}")
-        else:
-            # 不需要 LoRA
-            if state.current_lora_path:
-                # 卸载当前 LoRA
-                print(f"Unloading LoRA: {state.current_lora_path}")
-                try:
-                    state.pipeline.unload_lora_weights()
-                except Exception:
-                    pass
-                state.current_lora_path = None
-
-        final_image = None
-        sync_broadcast_generation_progress(0, req.steps, "generating", "Starting generation...")
-        
         try:
-            if req.comparison_mode and req.lora_path:
-                print("Generating Comparison: Base vs LoRA")
-                sync_broadcast_generation_progress(0, req.steps * 2, "generating", "Generating base image...")
+            while True:
+                item = progress_queue.get(timeout=30)
+                if item is None:
+                    break
                 
-                # 1. Generate Base (LoRA scale 0)
-                gen_base = torch.Generator("cuda" if torch.cuda.is_available() else "cpu").manual_seed(actual_seed)
-                base_image = run_inference(req.prompt, gen_base, lora_scale=0.0)
+                # Send progress to WebSocket clients
+                sync_broadcast_generation_progress(item)
                 
-                # 2. Generate LoRA (LoRA scale user_defined)
-                gen_lora = torch.Generator("cuda" if torch.cuda.is_available() else "cpu").manual_seed(actual_seed)
-                lora_image = run_inference(req.prompt, gen_lora, lora_scale=req.lora_scale)
+                yield f"data: {json.dumps(item)}\n\n"
                 
-                # 3. Stitch
-                total_width = base_image.width + lora_image.width
-                max_height = max(base_image.height, lora_image.height)
-                final_image = Image.new('RGB', (total_width, max_height))
-                final_image.paste(base_image, (0, 0))
-                final_image.paste(lora_image, (base_image.width, 0))
+                if item.get("stage") in ["completed", "error"]:
+                    break
+                    
+            # Send final result
+            if result_holder["result"]:
+                yield f"data: {json.dumps(result_holder['result'])}\n\n"
+            elif result_holder["error"]:
+                yield f"data: {json.dumps({'success': False, 'error': result_holder['error']})}\n\n"
                 
-            else:
-                # Normal generation
-                print(f"Generating image: {req.prompt}")
-                scale = req.lora_scale if req.lora_path else 0.0
-                final_image = run_inference(req.prompt, generator, lora_scale=scale)
-
-            # Save image and metadata
-            sync_broadcast_generation_progress(req.steps, req.steps, "saving", "Saving image...")
-            
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-            generated_dir = OUTPUTS_DIR / "generated"
-            generated_dir.mkdir(parents=True, exist_ok=True)
-            
-            filename = f"{timestamp}.png"
-            image_path = generated_dir / filename
-            final_image.save(image_path)
-            
-            # Save metadata
-            metadata = req.dict()
-            metadata["timestamp"] = timestamp
-            metadata["seed"] = actual_seed
-            metadata_path = generated_dir / f"{timestamp}.json"
-            with open(metadata_path, "w", encoding="utf-8") as f:
-                json.dump(metadata, f, ensure_ascii=False, indent=2)
-                
-            image_url = f"/outputs/generated/{filename}"
-            
-            # Convert to base64
-            buffered = io.BytesIO()
-            final_image.save(buffered, format="PNG")
-            img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
-            
-            # 完成生成
-            sync_broadcast_generation_progress(req.steps, req.steps, "completed", "Generation completed!")
-            state.generation_status["running"] = False
-            state.generation_status["stage"] = "completed"
-            
-            return {
-                "success": True,
-                "image": f"data:image/png;base64,{img_str}",
-                "url": image_url,
-                "seed": actual_seed,
-                "message": "Image generated successfully"
-            }
-            
-        finally:
-            # 清理 cross_attention_kwargs 和 adapter weights（LoRA 保持加载）
-            if state.pipeline:
-                state.pipeline.cross_attention_kwargs = None
-                # 重置 adapter weights 到默认值 1.0
-                if state.current_lora_path and hasattr(state.pipeline, 'get_list_adapters'):
-                    try:
-                        adapters_dict = state.pipeline.get_list_adapters()
-                        adapter_names = []
-                        for component_adapters in adapters_dict.values():
-                            adapter_names.extend(component_adapters)
-                        adapter_names = list(set(adapter_names))
-                        if adapter_names:
-                            weights = [1.0] * len(adapter_names)
-                            state.pipeline.set_adapters(adapter_names, adapter_weights=weights)
-                    except Exception:
-                        pass
-    
-    # 在线程池中执行生成
-    try:
-        result = await loop.run_in_executor(executor, do_generate)
-        return result
-    except Exception as e:
-        print(f"Generation error: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        # 更新错误状态
-        state.generation_status["running"] = False
-        state.generation_status["stage"] = "failed"
-        state.generation_status["error"] = str(e)
-        sync_broadcast_generation_progress(0, 0, "failed", f"Error: {str(e)}")
-        
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/api/generation-status")
-async def get_generation_status():
-    """获取当前生成进度状态"""
-    return state.generation_status.copy()
-
-
-@router.post("/api/unload-model")
-async def unload_model():
-    """手动卸载模型释放显存"""
-    import gc
-    
-    if state.pipeline is not None:
-        # 卸载 LoRA
-        if state.current_lora_path:
-            try:
-                state.pipeline.unload_lora_weights()
-            except Exception:
-                pass
-            state.current_lora_path = None
-        
-        # 卸载模型
-        del state.pipeline
-        state.pipeline = None
-        
-        # 清理 GPU 缓存
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()
-        
-        return {"success": True, "message": "Model unloaded successfully"}
-    
-    return {"success": True, "message": "No model loaded"}
-
-
-@router.get("/api/model-info")
-async def get_model_info():
-    """获取当前模型加载状态"""
-    return {
-        "model_loaded": state.pipeline is not None,
-        "current_lora": state.current_lora_path
-    }
-
-
-@router.get("/api/history")
-async def get_generation_history():
-    """Get list of generated images"""
-    generated_dir = OUTPUTS_DIR / "generated"
-    if not generated_dir.exists():
-        return []
-        
-    history = []
-    for metadata_file in sorted(generated_dir.glob("*.json"), reverse=True):
-        try:
-            with open(metadata_file, "r", encoding="utf-8") as f:
-                metadata = json.load(f)
-                
-            timestamp = metadata.get("timestamp")
-            if not timestamp:
-                continue
-                
-            image_filename = f"{timestamp}.png"
-            if (generated_dir / image_filename).exists():
-                history.append({
-                    "url": f"/outputs/generated/{image_filename}",
-                    "thumbnail": f"/outputs/generated/{image_filename}",
-                    "metadata": metadata
-                })
+        except queue.Empty:
+            yield f"data: {json.dumps({'success': False, 'error': 'Generation timeout'})}\n\n"
         except Exception as e:
-            print(f"Error reading history file {metadata_file}: {e}")
-            continue
-            
-    return history
+            yield f"data: {json.dumps({'success': False, 'error': str(e)})}\n\n"
+        finally:
+            thread.join(timeout=5)
+    
+    return StreamingResponse(
+        generate_sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
-@router.post("/api/history/delete")
-async def delete_history(req: DeleteHistoryRequest):
-    """Delete generated images and metadata"""
+@router.get("/history")
+async def get_generation_history():
+    """Get generation history"""
+    history = []
     generated_dir = OUTPUTS_DIR / "generated"
-    deleted_count = 0
+    
+    if generated_dir.exists():
+        json_files = sorted(generated_dir.glob("*.json"), reverse=True)
+        for json_file in json_files[:50]:  # Limit to recent 50
+            try:
+                with open(json_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    
+                png_file = json_file.with_suffix(".png")
+                if png_file.exists():
+                    data["has_image"] = True
+                    data["image_size"] = png_file.stat().st_size
+                else:
+                    data["has_image"] = False
+                    
+                history.append(data)
+            except Exception as e:
+                print(f"Error loading {json_file}: {e}")
+                continue
+    
+    return {"history": history}
+
+@router.delete("/history")
+async def delete_generation_history(req: DeleteHistoryRequest):
+    """Delete specific generation history items"""
+    deleted = []
     errors = []
+    
+    generated_dir = OUTPUTS_DIR / "generated"
     
     for timestamp in req.timestamps:
         try:
-            image_path = generated_dir / f"{timestamp}.png"
-            if image_path.exists():
-                image_path.unlink()
+            # Delete JSON metadata
+            json_file = generated_dir / f"{timestamp}.json"
+            if json_file.exists():
+                json_file.unlink()
                 
-            metadata_path = generated_dir / f"{timestamp}.json"
-            if metadata_path.exists():
-                metadata_path.unlink()
+            # Delete PNG image
+            png_file = generated_dir / f"{timestamp}.png"
+            if png_file.exists():
+                png_file.unlink()
                 
-            deleted_count += 1
+            deleted.append(timestamp)
         except Exception as e:
-            errors.append(f"Failed to delete {timestamp}: {str(e)}")
-            
+            errors.append(f"{timestamp}: {str(e)}")
+    
     return {
-        "success": True,
-        "deleted": deleted_count,
+        "success": len(errors) == 0,
+        "deleted": deleted,
         "errors": errors
     }
+
+@router.get("/history/image/{timestamp}")
+async def get_history_image(timestamp: str):
+    """Get a specific history image"""
+    png_file = OUTPUTS_DIR / "generated" / f"{timestamp}.png"
+    
+    if not png_file.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    return FileResponse(
+        path=str(png_file),
+        media_type="image/png",
+        headers={"Content-Disposition": f"inline; filename=\"{timestamp}.png\""}
+    )
