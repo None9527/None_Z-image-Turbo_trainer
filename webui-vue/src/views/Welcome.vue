@@ -201,7 +201,7 @@
         </div>
 
         <el-button 
-          v-if="!currentModelStatus.exists && !isDownloading" 
+          v-if="!currentModelStatus.exists" 
           type="primary" 
           @click="startDownload" 
           :loading="startingDownload"
@@ -210,11 +210,6 @@
           <el-icon><Download /></el-icon>
           下载 {{ currentModelName }} 模型
         </el-button>
-        
-        <div v-if="isDownloading" class="download-progress">
-          <el-progress :percentage="downloadProgress" :stroke-width="8" />
-          <span class="download-info">{{ downloadSizeText }}</span>
-        </div>
       </div>
 
       <!-- 联系方式 -->
@@ -280,13 +275,6 @@ const systemInfo = computed(() => systemStore.systemInfo)
 const wsConnected = computed(() => wsStore.isConnected)
 const hasSystemInfo = computed(() => systemStore.systemInfo.python !== '')
 
-const downloadStatus = computed(() => systemStore.downloadStatus)
-const isDownloading = computed(() => downloadStatus.value.status === 'running')
-const downloadProgress = computed(() => downloadStatus.value.progress)
-const downloadSizeText = computed(() => {
-  const gb = downloadStatus.value.downloaded_size_gb || 0
-  return gb > 0 ? `已下载 ${gb.toFixed(2)} GB` : '准备下载...'
-})
 
 const validPercent = computed(() => {
   if (!currentModelStatus.value.summary) return 0
@@ -982,17 +970,6 @@ refreshModelStatus()
 
 .download-btn {
   width: 100%;
-}
-
-.download-progress {
-  text-align: center;
-}
-
-.download-info {
-  display: block;
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--text-muted);
 }
 
 /* 联系方式 */
