@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-Adapter Registry - 适配器注册表
+Model Adapter Registry - 模型适配器注册表
 
 管理所有模型适配器的注册和获取。
+支持自动检测模型类型。
 """
 
 from typing import Dict, Type, Optional, List
+from pathlib import Path
 import logging
+import json
 
 from .base import ModelAdapter
 
@@ -14,6 +17,18 @@ logger = logging.getLogger(__name__)
 
 # 全局适配器注册表
 _ADAPTERS: Dict[str, Type[ModelAdapter]] = {}
+
+# 名称别名映射
+_ALIASES = {
+    "zimage": "zimage",
+    "z_image": "zimage",
+    "z_image_turbo": "zimage",
+    "zimage_turbo": "zimage",
+    "longcat": "longcat",
+    "longcat_image": "longcat",
+    "long_cat": "longcat",
+    "flux": "longcat",  # LongCat 基于 FLUX 架构
+}
 
 
 def register_adapter(name: str):
@@ -48,20 +63,12 @@ def get_adapter(name: str, **kwargs) -> ModelAdapter:
     Raises:
         ValueError: 如果适配器不存在
     """
-    # 名称标准化和别名映射
+    # 确保适配器已加载
+    _ensure_adapters_loaded()
+    
+    # 名称标准化
     name_lower = name.lower().replace("-", "_").replace(" ", "_")
-    
-    aliases = {
-        "zimage": "zimage",
-        "z_image": "zimage",
-        "z_image_turbo": "zimage",
-        "zimage_turbo": "zimage",
-        "longcat": "longcat",
-        "longcat_image": "longcat",
-        "long_cat": "longcat",
-    }
-    
-    resolved_name = aliases.get(name_lower, name_lower)
+    resolved_name = _ALIASES.get(name_lower, name_lower)
     
     if resolved_name not in _ADAPTERS:
         available = list_adapters()
@@ -79,6 +86,7 @@ def list_adapters() -> List[str]:
     Returns:
         适配器名称列表
     """
+    _ensure_adapters_loaded()
     return list(_ADAPTERS.keys())
 
 
@@ -92,9 +100,6 @@ def auto_detect_adapter(model_path: str) -> Optional[str]:
     Returns:
         适配器名称，无法检测时返回 None
     """
-    import os
-    from pathlib import Path
-    
     path = Path(model_path)
     
     # 检查目录名或文件名中的关键词
@@ -113,7 +118,6 @@ def auto_detect_adapter(model_path: str) -> Optional[str]:
     if path.is_dir():
         config_path = path / "config.json"
         if config_path.exists():
-            import json
             try:
                 with open(config_path, "r") as f:
                     config = json.load(f)
@@ -132,17 +136,16 @@ def auto_detect_adapter(model_path: str) -> Optional[str]:
     return None
 
 
-# 延迟导入适配器实现（避免循环导入）
 def _ensure_adapters_loaded():
     """确保所有适配器已加载"""
     if not _ADAPTERS:
-        from . import zimage_adapter  # noqa: F401
-        from . import longcat_adapter  # noqa: F401
-
-
-# 在模块加载时自动加载适配器
-try:
-    _ensure_adapters_loaded()
-except ImportError:
-    pass  # 适配器文件可能还不存在
+        try:
+            from .zimage import adapter as zimage_adapter  # noqa: F401
+        except ImportError as e:
+            logger.debug(f"Could not import zimage adapter: {e}")
+        
+        try:
+            from .longcat import adapter as longcat_adapter  # noqa: F401
+        except ImportError as e:
+            logger.debug(f"Could not import longcat adapter: {e}")
 

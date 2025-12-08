@@ -10,8 +10,8 @@ import torch.nn as nn
 from typing import Dict, List, Optional, Tuple, Any, Union
 import logging
 
-from .base import ModelAdapter, ModelConfig
-from .registry import register_adapter
+from ..base import ModelAdapter, ModelConfig
+from ..registry import register_adapter
 
 logger = logging.getLogger(__name__)
 

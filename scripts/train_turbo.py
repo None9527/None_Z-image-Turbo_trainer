@@ -27,8 +27,8 @@ from accelerate.utils import set_seed
 # 添加项目路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
 
-from zimage_trainer.adapters import get_adapter, list_adapters, ModelAdapter
-from zimage_trainer.adapters.registry import auto_detect_adapter
+# 从新的模块化结构导入
+from models import get_adapter, list_adapters, auto_detect_adapter, ModelAdapter
 from zimage_trainer.dataset.dataloader import create_dataloader
 from zimage_trainer.utils.memory_optimizer import MemoryOptimizer
 from zimage_trainer.utils.snr_utils import compute_snr_weights

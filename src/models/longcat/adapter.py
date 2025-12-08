@@ -6,15 +6,15 @@ LongCat-Image Adapter - LongCat-Image 模型适配器
 """
 
 import sys
-import math
+import os
 import torch
 import torch.nn as nn
 from typing import Dict, List, Optional, Tuple, Any, Union
 from pathlib import Path
 import logging
 
-from .base import ModelAdapter, ModelConfig
-from .registry import register_adapter
+from ..base import ModelAdapter, ModelConfig
+from ..registry import register_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +32,8 @@ class LongCatAdapter(ModelAdapter):
     - dynamic shift
     """
     
-    # LongCat-Image 源码路径（用于导入）
-    LONGCAT_SOURCE_PATH = "D:/AI/LongCat-Image"
+    # LongCat-Image 源码路径（可通过环境变量覆盖）
+    LONGCAT_SOURCE_PATH = os.environ.get("LONGCAT_SOURCE_PATH", "D:/AI/LongCat-Image")
     
     def __init__(
         self,
@@ -230,7 +230,6 @@ class LongCatAdapter(ModelAdapter):
         batch_size = pack_info["batch_size"]
         height = pack_info["height"]
         width = pack_info["width"]
-        vae_scale_factor = pack_info.get("vae_scale_factor", 16)
         
         batch_size_out, num_patches, channels = latents.shape
         

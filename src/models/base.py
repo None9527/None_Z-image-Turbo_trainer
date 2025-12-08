@@ -3,6 +3,11 @@
 Base Model Adapter - 模型适配器抽象基类
 
 定义所有模型适配器必须实现的接口，使训练脚本可以复用核心逻辑。
+
+架构说明:
+- 每个模型（Z-Image、LongCat、FLUX 等）在 models/ 下有独立子目录
+- 子目录包含 adapter.py（适配器）、pipeline.py（推理）、utils.py（工具）
+- 训练脚本通过 registry 获取适配器，实现训练逻辑复用
 """
 
 from abc import ABC, abstractmethod
@@ -43,6 +48,17 @@ class ModelAdapter(ABC):
     
     每个模型（Z-Image、LongCat、FLUX 等）需要实现此接口。
     训练脚本通过此接口与模型交互，实现训练逻辑复用。
+    
+    子类必须实现:
+    - name: 适配器名称
+    - config: 模型配置
+    - load_transformer(): 加载 Transformer
+    - load_vae(): 加载 VAE
+    - get_lora_target_modules(): LoRA 目标模块
+    - pack_latents() / unpack_latents(): Latent 打包/解包
+    - sample_timesteps(): 时间步采样
+    - prepare_position_ids(): 位置编码
+    - forward(): 模型前向
     """
     
     def __init__(self):
@@ -385,4 +401,3 @@ class ModelAdapter(ABC):
     
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(name={self.name})"
-
