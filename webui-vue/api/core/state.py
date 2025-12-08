@@ -94,6 +94,31 @@ cache_progress: Dict[str, Any] = {
     "text": {"current": 0, "total": 0, "progress": 0}
 }
 
+# Download progress state (用于总进度显示)
+download_progress: Dict[str, Any] = {
+    "progress": 0,
+    "downloaded_gb": 0,
+    "total_gb": 32,  # 默认预估
+    "speed": 0,
+    "speed_unit": "MB"
+}
+
+def update_download_progress(**kwargs):
+    """更新下载进度"""
+    download_progress.update(kwargs)
+
+def reset_download_progress():
+    """重置下载进度"""
+    download_progress["progress"] = 0
+    download_progress["downloaded_gb"] = 0
+    download_progress["total_gb"] = 32
+    download_progress["speed"] = 0
+    download_progress["speed_unit"] = "MB"
+
+def get_download_progress() -> Dict[str, Any]:
+    """获取下载进度"""
+    return download_progress.copy()
+
 def update_cache_progress(cache_type: str, **kwargs):
     """更新缓存进度"""
     if cache_type in cache_progress:

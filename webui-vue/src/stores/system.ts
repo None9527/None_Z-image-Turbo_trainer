@@ -45,6 +45,9 @@ export interface DownloadStatus {
   status: 'idle' | 'running' | 'completed' | 'failed'
   progress: number
   downloaded_size_gb: number
+  total_size_gb?: number
+  speed?: number
+  speed_unit?: string
   currentFile?: string
 }
 

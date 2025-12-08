@@ -201,7 +201,7 @@
         </div>
 
         <el-button 
-          v-if="!currentModelStatus.exists" 
+          v-if="!currentModelStatus.exists && !isDownloading" 
           type="primary" 
           @click="startDownload" 
           :loading="startingDownload"
@@ -210,6 +210,24 @@
           <el-icon><Download /></el-icon>
           下载 {{ currentModelName }} 模型
         </el-button>
+        
+        <!-- 下载进度（总进度） -->
+        <div v-if="isDownloading" class="download-progress-box">
+          <div class="progress-header">
+            <span>正在下载 {{ currentModelName }}</span>
+            <span class="progress-percent">{{ downloadProgress.toFixed(1) }}%</span>
+          </div>
+          <el-progress 
+            :percentage="downloadProgress" 
+            :stroke-width="10"
+            :show-text="false"
+            status="success"
+          />
+          <div class="progress-info">
+            <span>{{ downloadedSize }} / {{ totalSize }}</span>
+            <span>{{ downloadSpeed }}</span>
+          </div>
+        </div>
       </div>
 
       <!-- 联系方式 -->
@@ -274,6 +292,24 @@ const startingDownload = ref(false)
 const systemInfo = computed(() => systemStore.systemInfo)
 const wsConnected = computed(() => wsStore.isConnected)
 const hasSystemInfo = computed(() => systemStore.systemInfo.python !== '')
+
+// 下载状态
+const downloadStatus = computed(() => systemStore.downloadStatus)
+const isDownloading = computed(() => downloadStatus.value.status === 'running')
+const downloadProgress = computed(() => downloadStatus.value.progress || 0)
+const downloadedSize = computed(() => {
+  const gb = downloadStatus.value.downloaded_size_gb || 0
+  return gb >= 1 ? `${gb.toFixed(2)} GB` : `${(gb * 1024).toFixed(0)} MB`
+})
+const totalSize = computed(() => {
+  const gb = downloadStatus.value.total_size_gb || 32  // 默认预估 32GB
+  return `${gb.toFixed(0)} GB`
+})
+const downloadSpeed = computed(() => {
+  const speed = downloadStatus.value.speed || 0
+  const unit = downloadStatus.value.speed_unit || 'MB'
+  return speed > 0 ? `${speed.toFixed(1)} ${unit}/s` : '计算中...'
+})
 
 
 const validPercent = computed(() => {
@@ -970,6 +1006,33 @@ refreshModelStatus()
 
 .download-btn {
   width: 100%;
+}
+
+.download-progress-box {
+  padding: 12px;
+  background: var(--bg-lighter);
+  border-radius: 8px;
+}
+
+.download-progress-box .progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.download-progress-box .progress-percent {
+  font-weight: 600;
+  color: var(--success);
+}
+
+.download-progress-box .progress-info {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 /* 联系方式 */

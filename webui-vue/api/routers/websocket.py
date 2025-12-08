@@ -211,6 +211,10 @@ class ConnectionManager:
         elif log_type == "cache_text_log" and progress:
             self._update_cache_progress("text", progress)
         
+        # 更新下载进度（用于总进度显示）
+        if log_type == "download_log" and progress:
+            self._update_download_progress(progress)
+        
         await self.broadcast({
             "type": log_type,
             "timestamp": datetime.now().isoformat(),
@@ -229,6 +233,21 @@ class ConnectionManager:
             print(f"[Cache] Updated {cache_type}: {state.cache_progress[cache_type]}", flush=True)
         elif progress.get("type") == "percent":
             state.update_cache_progress(cache_type, progress=progress.get("value", 0))
+    
+    def _update_download_progress(self, progress: Dict[str, Any]):
+        """更新下载进度"""
+        if progress.get("type") == "total_progress":
+            state.update_download_progress(
+                progress=progress.get("percent", 0),
+                downloaded_gb=progress.get("downloaded_gb", 0),
+                total_gb=progress.get("total_gb", 32),
+                speed=progress.get("speed", 0),
+                speed_unit=progress.get("speed_unit", "MB")
+            )
+        elif progress.get("type") == "percent":
+            state.update_download_progress(progress=progress.get("value", 0))
+        elif progress.get("type") == "complete":
+            state.update_download_progress(progress=100)
     
     def _update_training_history(self, progress: Dict[str, Any]):
         """更新训练历史数据（用于图表持久化）"""
@@ -452,6 +471,49 @@ def parse_training_progress(line: str) -> Optional[Dict[str, Any]]:
 def parse_download_progress(line: str) -> Optional[Dict[str, Any]]:
     """解析下载进度信息"""
     import re
+    
+    # 优先匹配新格式: [PROGRESS] [...] 50.0% | 16.00 GB/32.00 GB | 10.5 MB/s
+    progress_match = re.search(
+        r'\[PROGRESS\].*?(\d+(?:\.\d+)?)%\s*\|\s*([0-9.]+)\s*(MB|GB)/([0-9.]+)\s*(MB|GB)\s*\|\s*([0-9.]+)\s*(MB|KB)/s',
+        line, re.IGNORECASE
+    )
+    if progress_match:
+        downloaded = float(progress_match.group(2))
+        downloaded_unit = progress_match.group(3).upper()
+        total = float(progress_match.group(4))
+        total_unit = progress_match.group(5).upper()
+        speed = float(progress_match.group(6))
+        speed_unit = progress_match.group(7).upper()
+        
+        # 统一转换为 GB
+        if downloaded_unit == "MB":
+            downloaded /= 1024
+        if total_unit == "MB":
+            total /= 1024
+            
+        return {
+            "type": "total_progress",
+            "percent": float(progress_match.group(1)),
+            "downloaded_gb": downloaded,
+            "total_gb": total,
+            "speed": speed,
+            "speed_unit": speed_unit
+        }
+    
+    # 匹配简化的新格式: [PROGRESS] [...] 50.0%
+    simple_progress = re.search(r'\[PROGRESS\].*?(\d+(?:\.\d+)?)%', line)
+    if simple_progress:
+        return {
+            "type": "percent",
+            "value": float(simple_progress.group(1))
+        }
+    
+    # 匹配下载完成: [PROGRESS] Download complete!
+    if "[PROGRESS] Download complete" in line:
+        return {
+            "type": "complete",
+            "percent": 100
+        }
     
     # 匹配百分比: "50%" 或 "Downloading: 50%"
     percent_match = re.search(r'(\d+(?:\.\d+)?)%', line)
@@ -696,29 +758,24 @@ def get_download_status() -> Dict[str, Any]:
     return_code = state.download_process.poll()
     
     if return_code is None:
-        # 获取模型目录大小来估算进度
-        model_path = Path(MODEL_PATH)
-        total_size = 0
-        if model_path.exists():
-            for f in model_path.rglob("*"):
-                if f.is_file():
-                    total_size += f.stat().st_size
-        
-        # 预估总大小约 30GB
-        estimated_total = 30 * 1024 * 1024 * 1024
-        progress = min(100, round(total_size / estimated_total * 100, 1))
+        # 从 state 获取下载进度
+        dp = state.get_download_progress()
         
         return {
             "status": "running",
-            "progress": progress,
-            "downloaded_size": total_size,
-            "downloaded_size_gb": round(total_size / (1024**3), 2)
+            "progress": dp.get("progress", 0),
+            "downloaded_size_gb": dp.get("downloaded_gb", 0),
+            "total_size_gb": dp.get("total_gb", 32),
+            "speed": dp.get("speed", 0),
+            "speed_unit": dp.get("speed_unit", "MB")
         }
     elif return_code == 0:
         state.download_process = None
+        state.reset_download_progress()
         return {"status": "completed", "progress": 100}
     else:
         state.download_process = None
+        state.reset_download_progress()
         return {"status": "failed", "code": return_code}
 
 
