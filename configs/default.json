@@ -11,7 +11,10 @@
     "max_shift": 1.15,
     "snr_gamma": 5,
     "snr_floor": 0.1,
-    "use_anchor": true
+    "use_anchor": true,
+    "raft_mode": false,
+    "free_stream_ratio": 0.3,
+    "latent_jitter_scale": 0
   },
   "network": {
     "dim": 16,
@@ -29,15 +32,19 @@
     "lr_scheduler": "constant",
     "lr_warmup_steps": 0,
     "lr_num_cycles": 1,
-    "lambda_fft": 0,
-    "lambda_cosine": 0,
-    "loss_mode": "standard",
+    "lambda_l1": 1,
+    "lambda_cosine": 0.1,
+    "enable_freq": false,
+    "lambda_freq": 0.3,
     "alpha_hf": 1,
     "beta_lf": 0.2,
+    "enable_style": false,
+    "lambda_style": 0.3,
     "lambda_struct": 1,
     "lambda_light": 0.5,
     "lambda_color": 0.3,
-    "lambda_tex": 0.5
+    "lambda_tex": 0.5,
+    "lambda_fft": 0
   },
   "dataset": {
     "batch_size": 1,
@@ -55,6 +62,6 @@
     "mixed_precision": "bf16",
     "seed": 42
   },
-  "modified": "2025-12-09T01:09:54.373921",
+  "modified": "2025-12-09T23:03:31.091119",
   "created": "2025-12-04T10:46:26.582307"
 }

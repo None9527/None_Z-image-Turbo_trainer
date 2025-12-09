@@ -126,7 +126,7 @@ class ZImageLatentDataset(Dataset):
         else:
             base_name = name.rsplit('_', 1)[0]
         
-        return cache_dir / f"{base_name}{self.TE_SUFFIX}"
+        return cache_dir / f"{base_name}{self.te_suffix}"
     
     def __len__(self) -> int:
         return len(self.cache_files)

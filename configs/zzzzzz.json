@@ -12,6 +12,9 @@
     "snr_gamma": 5,
     "snr_floor": 0.1,
     "use_anchor": true,
+    "raft_mode": true,
+    "free_stream_ratio": 0.3,
+    "latent_jitter_scale": 0,
     "use_turbo": false
   },
   "network": {
@@ -26,19 +29,24 @@
     "output_name": "zimage-lora",
     "learning_rate": 0.001,
     "learning_rate_str": "0.001",
-    "weight_decay": 0.003,
+    "weight_decay": 0,
     "lr_scheduler": "cosine_with_restarts",
-    "lr_warmup_steps": 500,
+    "lr_warmup_steps": 140,
     "lr_num_cycles": 1,
-    "lambda_fft": 0,
+    "lambda_l1": 1,
     "lambda_cosine": 0,
-    "loss_mode": "standard",
+    "enable_freq": true,
+    "lambda_freq": 0.3,
     "alpha_hf": 1,
     "beta_lf": 0.2,
+    "enable_style": true,
+    "lambda_style": 0.3,
     "lambda_struct": 1,
     "lambda_light": 0.5,
     "lambda_color": 0.3,
     "lambda_tex": 0.5,
+    "lambda_fft": 0,
+    "loss_mode": "standard",
     "snr_gamma": 5
   },
   "dataset": {
@@ -54,7 +62,7 @@
     ]
   },
   "advanced": {
-    "max_grad_norm": 0,
+    "max_grad_norm": 5.5,
     "gradient_checkpointing": true,
     "blocks_to_swap": 8,
     "num_train_epochs": 20,
@@ -63,6 +71,6 @@
     "mixed_precision": "bf16",
     "seed": 42
   },
-  "modified": "2025-12-09T01:13:05.308574",
+  "modified": "2025-12-09T20:28:03.568810",
   "created": "2025-12-05T22:50:07.098159"
 }

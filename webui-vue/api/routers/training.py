@@ -596,29 +596,53 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
 
 @router.post("/stop")
 async def stop_training():
-    """Stop training process with proper cleanup"""
+    """Stop training process with proper cleanup (Kill Process Tree)"""
     if state.training_process:
         pid = state.training_process.pid
-        state.add_log(f"正在停止训练进程 (PID: {pid})...", "warning")
         
-        # 先尝试优雅终止
-        state.training_process.terminate()
+        # Safety Guard: Never kill self
+        if pid == os.getpid():
+            state.add_log("错误: 试图终止主进程，操作已拦截", "error")
+            return {"status": "error", "message": "Cannot kill main process"}
+            
+        state.add_log(f"正在停止训练进程树 (PID: {pid})...", "warning")
         
-        # 等待进程结束（最多10秒）
+        import psutil
         try:
-            state.training_process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            # 强制杀死
-            state.training_process.kill()
-            state.training_process.wait(timeout=5)
-            state.add_log("进程被强制终止", "warning")
+            parent = psutil.Process(pid)
+            children = parent.children(recursive=True)
+            for child in children:
+                try:
+                    child.kill()
+                except psutil.NoSuchProcess:
+                    pass
+            parent.kill()
+            
+            # Wait for termination
+            psutil.wait_procs(children + [parent], timeout=5)
+            
+        except psutil.NoSuchProcess:
+            state.add_log("进程已不存在", "warning")
+        except Exception as e:
+            state.add_log(f"停止进程树失败: {str(e)}", "error")
+            # Fallback
+            try:
+                state.training_process.kill()
+            except:
+                pass
         
         state.training_process = None
-        state.add_log("训练已停止，显存将被释放", "warning")
+        state.add_log("训练已停止，进程树已清理", "warning")
         
         # 清理 Python 端的缓存
         import gc
         gc.collect()
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except:
+            pass
         
     return {"status": "stopped"}
 

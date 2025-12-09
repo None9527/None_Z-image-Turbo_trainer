@@ -42,8 +42,14 @@ def load_pipeline_with_adapter(model_type: str):
             local_files_only=True,  # 强制使用本地模型
         )
     elif model_type == "longcat":
-        from diffusers import FluxPipeline
-        pipe = FluxPipeline.from_pretrained(
+        try:
+            from longcat_image.pipelines.pipeline_longcat_image import LongCatImagePipeline
+        except ImportError:
+             # Fallback or try adding path again if needed, though sys.path should be set
+            sys.path.append(str(PROJECT_ROOT / "src"))
+            from longcat_image.pipelines.pipeline_longcat_image import LongCatImagePipeline
+
+        pipe = LongCatImagePipeline.from_pretrained(
             str(model_path),
             torch_dtype=dtype,
             local_files_only=True,  # 强制使用本地模型
@@ -439,19 +445,28 @@ async def get_generation_history():
                     
                 png_file = json_file.with_suffix(".png")
                 if png_file.exists():
-                    data["has_image"] = True
-                    data["image_size"] = png_file.stat().st_size
+                    has_image = True
+                    image_size = png_file.stat().st_size
                 else:
-                    data["has_image"] = False
+                    has_image = False
                     
-                history.append(data)
+                # 构造前端需要的数据结构
+                history_item = {
+                    "url": f"/api/history/image/{data.get('timestamp', '')}",
+                    "thumbnail": f"/api/history/image/{data.get('timestamp', '')}",
+                    "metadata": data,
+                    "has_image": has_image,
+                    "image_size": image_size if has_image else 0
+                }
+                    
+                history.append(history_item)
             except Exception as e:
                 print(f"Error loading {json_file}: {e}")
                 continue
     
     return {"history": history}
 
-@router.delete("/history")
+@router.post("/history/delete")
 async def delete_generation_history(req: DeleteHistoryRequest):
     """Delete specific generation history items"""
     deleted = []

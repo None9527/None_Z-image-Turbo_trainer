@@ -18,6 +18,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
 
 import torch
+import torch.nn.functional as F
 import argparse
 from pathlib import Path
 from tqdm import tqdm
@@ -325,7 +326,6 @@ def main():
     # 初始化 Accelerator
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        mixed_precision=args.mixed_precision,
     )
     
     # 获取分布式训练信息
@@ -356,8 +356,70 @@ def main():
         device=accelerator.device,
         torch_dtype=weight_dtype,
     )
-    transformer.requires_grad_(False)
     transformer.train()  # 需要训练模式以支持 LoRA
+    
+    # =========================================================================
+    # 🐒 Monkey Patch for Z-Image 12GB VRAM Training (Frozen + Checkpointing)
+    # =========================================================================
+    # Problem: Z-Image uses List[Tensor] inputs inside its blocks.
+    # PyTorch checkpointing fails to trace gradients through Lists when model is frozen.
+    # Solution: We intercept the checkpoint call, pack List->Tensor, checkpoint, then unpack Tensor->List.
+    
+    def custom_checkpoint_func(layer, x, *args, **kwargs):
+        # 1. Handle List Input
+        if isinstance(x, list):
+            # Pack
+            sizes = [t.shape[0] for t in x]
+            x_cat = torch.cat(x, dim=0)
+            # Only force requires_grad if it doesn't represent a history (i.e. first layer inputs)
+            if x_cat.grad_fn is None:
+                x_cat.requires_grad_(True)
+            
+            # Wrapper for the layer execution
+            def custom_layer_forward(x_in, *layer_args):
+                # Unpack
+                x_split = list(x_in.split(sizes, dim=0))
+                # Call Original Layer
+                output = layer(x_split, *layer_args)
+                
+                # Handle List Output
+                if isinstance(output, list):
+                    return torch.cat(output, dim=0)
+                return output
+            
+            # 2. Checkpoint with Tensor
+            # Note: We must ensure use_reentrant=False for best compatibility
+            x_out_cat = torch.utils.checkpoint.checkpoint(
+                custom_layer_forward, 
+                x_cat, 
+                *args, 
+                use_reentrant=False,
+                **kwargs
+            )
+            
+            # 3. Handle List Output Restoration
+            # We assume output structure matches input structure (sequence of hidden states)
+            # If layer preserved sizes (which transformer blocks do), we split back
+            x_out = list(x_out_cat.split(sizes, dim=0))
+            return x_out
+            
+        else:
+            # Fallback for standard Tensor inputs
+            return torch.utils.checkpoint.checkpoint(
+                layer, x, *args, use_reentrant=False, **kwargs
+            )
+
+    if args.gradient_checkpointing:
+        logger.info("  [HACK] 应用 Z-Image 梯度检查点补丁 (Monkey Patch)")
+        transformer._gradient_checkpointing_func = custom_checkpoint_func
+        # Freeze model to save 12GB VRAM
+        transformer.requires_grad_(False)
+        logger.info("  [MEM] 底模已冻结 (Frozen Base Model)")
+    else:
+         # Legacy unfreeze if no checkpointing (though we shouldn't be here for 12GB goal)
+         pass
+
+    # =========================================================================
     
     # 1.1 配置SDPA (Scaled Dot-Product Attention)
     logger.info("\n[INIT] 配置 SDPA 注意力后端...")
@@ -621,6 +683,9 @@ def main():
                 # 准备模型输入
                 # Z-Image expects List[Tensor(C, 1, H, W)]
                 model_input = noisy_latents.unsqueeze(2)  # (B, C, 1, H, W)
+                
+                # model_input.requires_grad_(True) handled by params if model is unfrozen
+                    
                 model_input_list = list(model_input.unbind(dim=0))
                 
                 # Timestep normalization (Z-Image uses (1000-t)/1000)
@@ -778,6 +843,10 @@ def main():
                 if snr_weights is not None:
                     loss = loss * snr_weights.mean()
                 
+                # 确保 Loss 为 Float32 (避免 Mixed Precision backward error)
+                if loss.dtype != torch.float32:
+                    loss = loss.to(dtype=torch.float32)
+                
                 # 反向传播
                 accelerator.backward(loss)
             
@@ -790,6 +859,9 @@ def main():
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
+                
+                # Cleanup transformer gradients (since we unfroze it but don't optimize it)
+                transformer.zero_grad()
                 
                 # 更新进度
                 progress_bar.update(1)

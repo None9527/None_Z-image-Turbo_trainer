@@ -433,7 +433,6 @@ def main():
     # 初始化 Accelerator
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        mixed_precision=args.mixed_precision,
     )
     
     # 设置随机种子
@@ -669,6 +668,10 @@ def main():
                 # Pack latents (FLUX 风格)
                 packed_latents, pack_info = adapter.pack_latents(noisy_latents)
                 
+                # 梯度检查点需要输入有梯度
+                if args.gradient_checkpointing:
+                    packed_latents.requires_grad_(True)
+                
                 # 准备位置编码
                 text_len = text_embeds.shape[1] if text_embeds.dim() == 3 else text_embeds.shape[0]
                 position_ids = adapter.prepare_position_ids(
@@ -833,6 +836,10 @@ def main():
                 if snr_weights is not None:
                     loss = loss * snr_weights.mean()
                 
+                # 确保 Loss 为 Float32 (避免 Mixed Precision backward error)
+                if loss.dtype != torch.float32:
+                    loss = loss.to(dtype=torch.float32)
+                
                 # 反向传播
                 accelerator.backward(loss)
             
@@ -860,7 +867,7 @@ def main():
                 freq = loss_components.get('freq', 0)
                 style = loss_components.get('style', 0)
                 free = loss_components.get('loss_free', 0)
-                print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} l1={l1:.4f} cos={cosine:.4f} freq={freq:.4f} style={style:.4f} free={free:.4f} lr={current_lr:.2e}", flush=True)
+                print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} l1={l1:.4f} cos={cosine:.4f} freq={freq:.4f} style={style:.4f} L2={free:.4f} lr={current_lr:.2e}", flush=True)
             
             # 执行内存优化 (清理缓存等)
             memory_optimizer.optimize_training_step()

@@ -98,7 +98,7 @@ class LongCatAdapter(ModelAdapter):
         self.anchor_sigmas = sigmas
         logger.debug(f"LongCat anchors: {self.anchor_sigmas.tolist()}")
     
-    def _calculate_shift(self, image_seq_len: int) -> float:
+    def _compute_mu(self, image_seq_len: int) -> float:
         """计算动态 shift 值"""
         m = (self.max_shift - self.base_shift) / (self.max_seq_len - self.base_seq_len)
         b = self.base_shift - m * self.base_seq_len
@@ -280,7 +280,7 @@ class LongCatAdapter(ModelAdapter):
         
         # 应用动态 shift
         if self.use_dynamic_shifting and image_seq_len is not None:
-            mu = self._calculate_shift(image_seq_len)
+            mu = self._compute_mu(image_seq_len)
             sigmas = mu * sigmas / (1 + (mu - 1) * sigmas)
         
         # LongCat 使用 t/1000 格式

@@ -16,5 +16,21 @@
   "vae": [
     "diffusers",
     "AutoencoderKL"
+  ],
+  "transformer": [
+    "longcat_image.models.longcat_image_dit",
+    "LongCatImageTransformer2DModel"
+  ],
+  "feature_extractor": [
+    null,
+    null
+  ],
+  "image_encoder": [
+    null,
+    null
+  ],
+  "text_processor": [
+    "transformers",
+    "Qwen2_5_VLProcessor"
   ]
 }

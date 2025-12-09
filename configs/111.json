@@ -3,7 +3,7 @@
   "model_type": "zimage",
   "acrf": {
     "enable_turbo": true,
-    "turbo_steps": 8,
+    "turbo_steps": 10,
     "shift": 3,
     "jitter_scale": 0.02,
     "use_dynamic_shifting": true,
@@ -11,7 +11,10 @@
     "max_shift": 1.15,
     "snr_gamma": 5,
     "snr_floor": 0.1,
-    "use_anchor": true
+    "use_anchor": true,
+    "raft_mode": true,
+    "free_stream_ratio": 0.3,
+    "latent_jitter_scale": 0.01
   },
   "network": {
     "dim": 16,
@@ -29,15 +32,20 @@
     "lr_scheduler": "cosine_with_restarts",
     "lr_warmup_steps": 100,
     "lr_num_cycles": 1,
-    "lambda_fft": 0,
+    "lambda_l1": 1,
     "lambda_cosine": 0,
-    "loss_mode": "standard",
+    "enable_freq": true,
+    "lambda_freq": 0.3,
     "alpha_hf": 1,
     "beta_lf": 0.2,
+    "enable_style": true,
+    "lambda_style": 0.3,
     "lambda_struct": 1,
     "lambda_light": 0.5,
     "lambda_color": 0.3,
     "lambda_tex": 0.5,
+    "lambda_fft": 0,
+    "loss_mode": "standard",
     "snr_gamma": 5,
     "epochs": 10,
     "gradient_accumulation_steps": 4,
@@ -51,7 +59,7 @@
     "datasets": [
       {
         "cache_directory": "D:\\AI\\None_Z-image-Turbo_trainer\\datasets\\1",
-        "num_repeats": 1,
+        "num_repeats": 59,
         "resolution_limit": 1024
       }
     ]
@@ -59,6 +67,7 @@
   "advanced": {
     "max_grad_norm": 1,
     "gradient_checkpointing": true,
+    "blocks_to_swap": 0,
     "num_train_epochs": 10,
     "save_every_n_epochs": 1,
     "gradient_accumulation_steps": 1,
@@ -76,6 +85,6 @@
     "lambda_fft": 0.05,
     "lambda_lpips": 0.5
   },
-  "modified": "2025-12-08T23:38:07.508445",
+  "modified": "2025-12-09T23:58:21.421870",
   "created": "2025-12-04T13:30:22.388187"
 }

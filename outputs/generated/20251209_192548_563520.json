@@ -1,0 +1,14 @@
+{
+  "prompt": "A futuristic city with flying cars, cyberpunk style, highly detailed, 8k",
+  "negative_prompt": "",
+  "steps": 9,
+  "guidance_scale": 1.0,
+  "seed": 2377620452615433,
+  "width": 576,
+  "height": 640,
+  "lora_path": null,
+  "lora_scale": 1.0,
+  "comparison_mode": false,
+  "model_type": "zimage",
+  "timestamp": "20251209_192548_563520"
+}
