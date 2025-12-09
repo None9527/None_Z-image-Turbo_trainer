@@ -158,11 +158,6 @@ def parse_args():
     parser.add_argument("--enable_bucket", action="store_true", default=True, help="启用分桶 (按分辨率分组)")
     parser.add_argument("--disable_bucket", action="store_true", help="禁用分桶 (所有图片必须相同尺寸)")
     
-    # SPDA (Sequence Parallel DataLoader Adapter) 参数
-    parser.add_argument("--spda_enabled", action="store_true", help="启用SPDA功能")
-    parser.add_argument("--sequence_parallel", action="store_true", default=True, help="启用序列并行优化")
-    parser.add_argument("--ulysses_seq_len", type=int, default=None, help="Ulysses序列长度")
-    
     # SDPA (Scaled Dot-Product Attention) 参数
     parser.add_argument("--attention_backend", type=str, default="sdpa", 
         choices=["sdpa", "flash", "_flash_3"], help="注意力后端选择")
@@ -188,6 +183,9 @@ def parse_args():
     parser.add_argument("--memory_swap_frequency", type=int, default=5, help="内存交换频率")
     parser.add_argument("--memory_pool_strategy", type=str, default="conservative",
         choices=["none", "conservative", "aggressive"], help="内存池策略")
+    
+    # 文本序列长度参数
+    parser.add_argument("--max_sequence_length", type=int, default=512, help="文本编码器最大序列长度 (需与缓存时一致)")
     
     args = parser.parse_args()
     
@@ -332,11 +330,7 @@ def main():
     
     # 获取分布式训练信息
     world_size = getattr(accelerator, 'num_processes', None)
-    rank = getattr(accelerator, 'process_index', None)
-    
-    # 将分布式信息添加到args中，供SPDA使用
-    args.world_size = world_size
-    args.rank = rank
+    rank = getattr(accelerator, 'rank', None)
     
     # 设置随机种子
     if args.seed is not None:
@@ -838,6 +832,11 @@ def main():
             save_path = Path(args.output_dir) / f"{args.output_name}_epoch{epoch+1}.safetensors"
             network.save_weights(save_path, dtype=weight_dtype)
             logger.info(f"\n[SAVE] 保存检查点 (Epoch {epoch+1}): {save_path}")
+            
+            # 显式清理显存 (防止 16G 显卡显存泄露)
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                gc.collect()
     
     # 保存最终模型
     final_path = Path(args.output_dir) / f"{args.output_name}_final.safetensors"

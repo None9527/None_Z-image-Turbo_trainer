@@ -471,6 +471,9 @@ snr_gamma: 5.0         # Min-SNR 加权，0=禁用
 turbo_steps: 10        # 锚点数（从调度器自动获取）
 jitter_scale: 0.02     # 锚点抖动幅度
 
+# 数据集配置
+max_sequence_length: 512  # 文本序列长度 (256/512/1024)
+
 # 损失模式配置
 loss_mode: standard    # standard / frequency / style / unified
 

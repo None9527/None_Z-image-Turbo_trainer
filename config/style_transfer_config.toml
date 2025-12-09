@@ -66,6 +66,9 @@ batch_size = 1
 shuffle = true
 enable_bucket = true
 
+# 文本编码最大序列长度 (需与缓存时一致)
+max_sequence_length = 512
+
 [[dataset.sources]]
 cache_directory = "/path/to/your/masterpiece/dataset/cache"
 num_repeats = 10

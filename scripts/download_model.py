@@ -183,12 +183,64 @@ def main():
 
     try:
         from modelscope.hub.snapshot_download import snapshot_download
+        from modelscope.hub.file_download import model_file_download
+        from modelscope.hub.api import HubApi
         
         # 执行下载(阻塞调用)
-        # 注意: snapshot_download 会输出自己的进度到 stderr/tqdm
-        # 我们的监控线程通过文件大小变化来显示总进度
         print(f"Downloading Model from https://www.modelscope.cn to directory: {model_dir}", flush=True)
-        snapshot_download(model_id, local_dir=str(model_dir))
+        
+        # 先获取远程文件列表，检测本地缺失或不完整的文件
+        print("[INFO] 检查远程文件列表...", flush=True)
+        missing_files = []
+        
+        try:
+            api = HubApi()
+            remote_files = api.get_model_files(model_id, recursive=True)
+            
+            # 检查每个远程文件是否存在且大小正确
+            for rf in remote_files:
+                file_path = rf.get('Path') or rf.get('Name', '')
+                file_size = rf.get('Size', 0)
+                
+                if not file_path or file_path.endswith('/'):
+                    continue  # 跳过目录
+                    
+                local_file = model_dir / file_path
+                if not local_file.exists():
+                    missing_files.append((file_path, file_size))
+                    print(f"[MISSING] {file_path}", flush=True)
+                elif file_size > 0 and local_file.stat().st_size != file_size:
+                    # 文件大小不匹配，删除以便重新下载
+                    missing_files.append((file_path, file_size))
+                    print(f"[INCOMPLETE] {file_path} (local: {local_file.stat().st_size}, remote: {file_size})", flush=True)
+                    local_file.unlink()  # 删除不完整文件
+                    
+        except Exception as e:
+            print(f"[WARN] 无法获取远程文件列表: {e}", flush=True)
+        
+        # 如果有缺失文件，逐个下载（绕过 snapshot_download 的全量验证）
+        if missing_files:
+            print(f"[INFO] 发现 {len(missing_files)} 个缺失/不完整文件，逐个下载...", flush=True)
+            for i, (file_path, file_size) in enumerate(missing_files):
+                print(f"[DOWNLOAD] ({i+1}/{len(missing_files)}) {file_path} ({format_size(file_size / (1024**3)) if file_size > 0 else '未知大小'})", flush=True)
+                try:
+                    # 使用 model_file_download 下载单个文件
+                    downloaded_path = model_file_download(
+                        model_id=model_id,
+                        file_path=file_path,
+                        local_dir=str(model_dir),
+                    )
+                    print(f"[OK] {file_path}", flush=True)
+                except Exception as e:
+                    print(f"[ERROR] 下载 {file_path} 失败: {e}", flush=True)
+            print("[INFO] 缺失文件下载完成!", flush=True)
+        else:
+            # 没有缺失文件，使用 snapshot_download 做最终验证
+            print("[INFO] 所有文件已存在，使用 snapshot_download 验证...", flush=True)
+            snapshot_download(
+                model_id, 
+                local_dir=str(model_dir),
+            )
         
         # 停止监控
         stop_event.set()

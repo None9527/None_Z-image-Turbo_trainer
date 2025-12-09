@@ -3,7 +3,6 @@
 Dataset and DataLoader for Z-Image training.
 
 Standalone implementation - no musubi-tuner dependency.
-Includes SPDA (Sequence Parallel DataLoader Adapter) support.
 """
 
 import os
@@ -28,197 +27,6 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class SPDALoaderAdapter:
-    """
-    Sequence Parallel DataLoader Adapter (SPDA)
-    为序列并行训练优化的数据加载器适配器
-    
-    主要功能：
-    1. 序列并行数据加载
-    2. 动态批次大小调整
-    3. 内存效率优化
-    4. 支持多GPU分布式训练
-    """
-    
-    def __init__(
-        self,
-        original_dataloader: DataLoader,
-        sequence_parallel: bool = True,
-        world_size: Optional[int] = None,
-        rank: Optional[int] = None,
-        gradient_accumulation_steps: int = 1,
-        ulysses_seq_len: Optional[int] = None,
-    ):
-        self.original_dataloader = original_dataloader
-        self.sequence_parallel = sequence_parallel
-        self.world_size = world_size or torch.cuda.device_count() if torch.cuda.is_available() else 1
-        self.rank = rank or 0
-        self.gradient_accumulation_steps = gradient_accumulation_steps
-        self.ulysses_seq_len = ulysses_seq_len
-        self.is_distributed = self.world_size > 1
-        
-        # 序列并行相关配置
-        self.enable_ulysses = ulysses_seq_len is not None
-        if self.enable_ulysses:
-            logger.info(f"启用Ulysses序列并行，序列长度: {ulysses_seq_len}")
-        
-        if self.sequence_parallel:
-            logger.info(f"启用SPDA序列并行 - World Size: {self.world_size}, Rank: {self.rank}")
-        
-        # 缓存机制
-        self._cache = {}
-        self._cache_size = 10  # 缓存批次数量
-        
-    def __iter__(self):
-        """返回适配器的迭代器"""
-        self.dataloader_iter = iter(self.original_dataloader)
-        self._step_counter = 0
-        self._skipped_batches = 0
-        return self
-    
-    def __next__(self):
-        """获取下一个批次数据"""
-        try:
-            # 跳过某些批次以保持分布式训练同步
-            if self.is_distributed and self._skipped_batches < self.rank:
-                next(self.dataloader_iter)
-                self._skipped_batches += 1
-                return self.__next__()  # 递归调用获取下一个有效批次
-            
-            batch = next(self.dataloader_iter)
-            self._step_counter += 1
-            
-            # 确保batch是字典类型
-            if not isinstance(batch, dict):
-                raise TypeError(f"Expected batch to be dict, got {type(batch)}")
-            
-            return self._apply_sequence_parallel_optimization(batch)
-            
-        except StopIteration:
-            raise StopIteration
-        
-    def __len__(self):
-        """返回数据加载器的长度"""
-        return len(self.original_dataloader)
-            
-    def _apply_sequence_parallel_optimization(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """应用序列并行优化到批次"""
-        optimized_batch = batch.copy()
-        
-        # 1. 序列长度优化
-        if self.enable_ulysses:
-            optimized_batch = self._apply_ulysses_optimization(optimized_batch)
-            
-        # 2. 内存优化
-        if self.sequence_parallel:
-            optimized_batch = self._apply_memory_optimization(optimized_batch)
-            
-        # 3. 批次大小动态调整
-        optimized_batch = self._apply_dynamic_batch_sizing(optimized_batch)
-        
-        return optimized_batch
-        
-    def _apply_ulysses_optimization(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """应用Ulysses序列并行优化"""
-        if 'vl_embed' in batch:
-            # 获取序列长度
-            seq_lens = []
-            for embed in batch['vl_embed']:
-                if hasattr(embed, 'shape'):
-                    seq_lens.append(embed.shape[0])
-                else:
-                    seq_lens.append(len(embed))
-            
-            # 序列长度对齐到ulysses_seq_len的倍数
-            target_len = self.ulysses_seq_len
-            if target_len:
-                for i, embed in enumerate(batch['vl_embed']):
-                    if hasattr(embed, 'shape'):
-                        current_len = embed.shape[0]
-                        if current_len > target_len:
-                            # 截断到目标长度
-                            batch['vl_embed'][i] = embed[:target_len]
-                        elif current_len < target_len:
-                            # 填充到目标长度
-                            pad_len = target_len - current_len
-                            if len(embed.shape) == 2:
-                                pad_tensor = torch.zeros(pad_len, embed.shape[1], device=embed.device)
-                                batch['vl_embed'][i] = torch.cat([embed, pad_tensor], dim=0)
-                            else:
-                                pad_tensor = torch.full((pad_len,), -1, device=embed.device)
-                                batch['vl_embed'][i] = torch.cat([embed, pad_tensor], dim=0)
-                                
-        return batch
-        
-    def _apply_memory_optimization(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """应用内存优化"""
-        # 序列并行分割
-        if self.world_size > 1:
-            for key, value in batch.items():
-                if torch.is_tensor(value) and value.dim() > 1:
-                    # 按序列维度分割
-                    if key == 'latents' and value.dim() == 4:
-                        # 对于latents，按height分割
-                        h = value.shape[2]
-                        split_size = h // self.world_size
-                        if split_size > 0:
-                            splits = torch.split(value, split_size, dim=2)
-                            batch[key] = splits[self.rank]
-                    elif key == 'vl_embed':
-                        # 对于vl_embed，处理list格式
-                        if isinstance(value, list):
-                            # 对list中的每个tensor进行分割
-                            for i, embed in enumerate(value):
-                                if torch.is_tensor(embed) and embed.dim() > 1:
-                                    seq_len = embed.shape[0]
-                                    split_size = seq_len // self.world_size
-                                    if split_size > 0:
-                                        splits = torch.split(embed, split_size, dim=0)
-                                        batch[key][i] = splits[self.rank]
-                                        
-        return batch
-        
-    def _apply_dynamic_batch_sizing(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """应用动态批次大小调整"""
-        # 根据序列长度动态调整批次大小
-        if 'vl_embed' in batch and isinstance(batch['vl_embed'], list):
-            seq_lens = []
-            for embed in batch['vl_embed']:
-                if hasattr(embed, 'shape'):
-                    seq_lens.append(embed.shape[0])
-                else:
-                    seq_lens.append(len(embed))
-            
-            max_seq_len = max(seq_lens)
-            base_batch_size = batch['latents'].shape[0] if 'latents' in batch else 1
-            
-            # 动态调整批次大小
-            if max_seq_len > 512:
-                # 长序列时减小批次大小
-                adjustment_factor = min(0.5, 512.0 / max_seq_len)
-                new_batch_size = max(1, int(base_batch_size * adjustment_factor))
-                
-                if new_batch_size < base_batch_size:
-                    # 截断批次
-                    for key, value in batch.items():
-                        if torch.is_tensor(value) and value.shape[0] > new_batch_size:
-                            batch[key] = value[:new_batch_size]
-                    logger.debug(f"动态调整批次大小: {base_batch_size} -> {new_batch_size} (max_seq_len: {max_seq_len})")
-                    
-        return batch
-        
-    def get_sequence_parallel_info(self) -> Dict[str, Union[bool, int]]:
-        """获取序列并行信息"""
-        return {
-            'sequence_parallel_enabled': self.sequence_parallel,
-            'world_size': self.world_size,
-            'rank': self.rank,
-            'ulysses_enabled': self.enable_ulysses,
-            'ulysses_seq_len': self.ulysses_seq_len,
-            'gradient_accumulation_steps': self.gradient_accumulation_steps,
-        }
-
-
 class ZImageLatentDataset(Dataset):
     """
     Dataset for loading pre-cached latents and text embeddings.
@@ -232,11 +40,13 @@ class ZImageLatentDataset(Dataset):
         self,
         datasets: List[Dict],
         shuffle: bool = True,
+        max_sequence_length: int = 512,
     ):
         super().__init__()
         
         self.datasets = datasets
         self.shuffle = shuffle
+        self.max_sequence_length = max_sequence_length
         
         self.cache_files = []
         self.resolutions = []
@@ -261,7 +71,7 @@ class ZImageLatentDataset(Dataset):
         if len(self.cache_files) == 0:
             raise ValueError("No valid cache files found in any dataset")
             
-        logger.info(f"Total samples: {len(self.cache_files)}")
+        logger.info(f"Total samples: {len(self.cache_files)} (max_seq_len={max_sequence_length})")
     
     def _load_dataset(self, cache_dir: Path, resolution_limit: Optional[int]) -> Tuple[List[Tuple[Path, Path]], List[Tuple[int, int]]]:
         """Load files from a single directory and filter by resolution"""
@@ -351,6 +161,14 @@ class ZImageLatentDataset(Dataset):
         if vl_embed_key is None:
             raise ValueError(f"No vl_embed key found in {te_path}")
         vl_embed = te_data[vl_embed_key]
+        
+        # 截断/填充到 max_sequence_length
+        seq_len = vl_embed.shape[0]
+        if seq_len > self.max_sequence_length:
+            vl_embed = vl_embed[:self.max_sequence_length]
+        elif seq_len < self.max_sequence_length:
+            pad_len = self.max_sequence_length - seq_len
+            vl_embed = torch.nn.functional.pad(vl_embed, (0, 0, 0, pad_len), mode='constant', value=0)
         
         return {
             'latents': latents,
@@ -453,15 +271,15 @@ def collate_fn(batch: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
     }
 
 
-def create_dataloader(args) -> Union[DataLoader, SPDALoaderAdapter]:
+def create_dataloader(args) -> DataLoader:
     """
-    从配置创建 DataLoader，支持SPDA (Sequence Parallel DataLoader Adapter)。
+    从配置创建 DataLoader。
     
     Args:
         args: 训练参数，包含dataset_config和其他相关配置
         
     Returns:
-        DataLoader or SPDALoaderAdapter: 原始数据加载器或SPDA优化的数据加载器
+        DataLoader: 数据加载器
     """
     # 读取 dataset 配置
     if hasattr(args, 'dataset_config') and args.dataset_config:
@@ -487,6 +305,7 @@ def create_dataloader(args) -> Union[DataLoader, SPDALoaderAdapter]:
     
     batch_size = config.get('batch_size', getattr(args, 'batch_size', 4))
     num_workers = config.get('num_workers', getattr(args, 'num_workers', 4))
+    max_sequence_length = config.get('max_sequence_length', getattr(args, 'max_sequence_length', 512))
     
     # 分桶设置：--disable_bucket 优先级最高
     if getattr(args, 'disable_bucket', False):
@@ -494,19 +313,10 @@ def create_dataloader(args) -> Union[DataLoader, SPDALoaderAdapter]:
     else:
         enable_bucket = config.get('enable_bucket', getattr(args, 'enable_bucket', True))
     
-    # SPDA相关参数
-    spda_enabled = config.get('spda_enabled', getattr(args, 'spda_enabled', False))
-    sequence_parallel = config.get('sequence_parallel', getattr(args, 'sequence_parallel', True))
-    ulysses_seq_len = config.get('ulysses_seq_len', getattr(args, 'ulysses_seq_len', None))
-    
-    # 分布式训练参数
-    world_size = getattr(args, 'world_size', None)
-    rank = getattr(args, 'rank', None)
-    gradient_accumulation_steps = getattr(args, 'gradient_accumulation_steps', 1)
-    
     # 创建 dataset
     dataset = ZImageLatentDataset(
         datasets=datasets,
+        max_sequence_length=max_sequence_length,
     )
     
     if enable_bucket:
@@ -535,27 +345,8 @@ def create_dataloader(args) -> Union[DataLoader, SPDALoaderAdapter]:
             drop_last=True,
         )
     
-    # 应用SPDA优化
-    if spda_enabled:
-        logger.info("🚀 启用SPDA (Sequence Parallel DataLoader Adapter)")
-        
-        spda_adapter = SPDALoaderAdapter(
-            original_dataloader=dataloader,
-            sequence_parallel=sequence_parallel,
-            world_size=world_size,
-            rank=rank,
-            gradient_accumulation_steps=gradient_accumulation_steps,
-            ulysses_seq_len=ulysses_seq_len,
-        )
-        
-        # 打印SPDA配置信息
-        spda_info = spda_adapter.get_sequence_parallel_info()
-        logger.info(f"SPDA配置: {spda_info}")
-        
-        return spda_adapter
-    else:
-        logger.info("📦 使用标准DataLoader")
-        return dataloader
+    logger.info("📦 DataLoader 创建完成")
+    return dataloader
 
 
 def _read_dataset_config(config_path: str) -> dict:

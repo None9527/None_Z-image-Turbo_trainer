@@ -82,8 +82,9 @@ def get_model_path(model_type: str, component: str = "base") -> Path:
 # ============================================================================
 LORA_PATH = _resolve_path("LORA_PATH", "./output")
 DATASETS_DIR = _resolve_path("DATASET_PATH", "./datasets")
+GENERATION_OUTPUT_PATH = _resolve_path("GENERATION_OUTPUT_PATH", "./outputs")  # 图片生成输出路径
 
-OUTPUTS_DIR = PROJECT_ROOT / "outputs"
+OUTPUTS_DIR = GENERATION_OUTPUT_PATH  # 图片生成输出目录
 CONFIGS_DIR = PROJECT_ROOT / "configs"
 OUTPUT_BASE_DIR = LORA_PATH  # LoRA 输出目录
 

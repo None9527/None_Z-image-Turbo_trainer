@@ -27,6 +27,7 @@ class CacheGenerationRequest(BaseModel):
     modelType: str = "zimage"  # 模型类型: zimage, longcat
     resolution: int = 1024
     batchSize: int = 1
+    maxSequenceLength: int = 512  # 文本编码器最大序列长度
 
 # 存储待执行的 text cache 参数
 _pending_text_cache: dict = {}
@@ -60,6 +61,7 @@ def _start_text_cache_after_latent():
             "--text_encoder", params["text_encoder"],
             "--input_dir", params["input_dir"],
             "--output_dir", params["output_dir"],
+            "--max_length", str(params.get("max_sequence_length", 512)),
             "--skip_existing"
         ]
         
@@ -170,7 +172,8 @@ async def generate_cache(request: CacheGenerationRequest):
                 "text_encoder": text_encoder_path,  # 使用根据模型类型获取的路径
                 "input_dir": str(dataset_path),
                 "output_dir": str(dataset_path),
-                "text_module": text_module
+                "text_module": text_module,
+                "max_sequence_length": request.maxSequenceLength
             }
             state.add_log("Text cache 已排队，将在 Latent cache 完成后自动开始", "info")
             started_tasks.append("text (queued)")
@@ -185,6 +188,7 @@ async def generate_cache(request: CacheGenerationRequest):
                 "--text_encoder", text_encoder_path,  # 使用根据模型类型获取的路径
                 "--input_dir", str(dataset_path),
                 "--output_dir", str(dataset_path),
+                "--max_length", str(request.maxSequenceLength),
                 "--skip_existing"
             ]
             

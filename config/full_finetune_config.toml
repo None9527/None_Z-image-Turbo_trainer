@@ -123,6 +123,9 @@ shuffle = true
 # 是否启用分桶
 enable_bucket = true
 
+# 文本编码最大序列长度 (需与缓存时一致)
+max_sequence_length = 512
+
 # --- 数据集列表 ---
 [[dataset.sources]]
 # 缓存目录路径

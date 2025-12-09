@@ -83,6 +83,10 @@ num_workers = 4
 shuffle = true
 enable_bucket = true
 
+# 文本编码最大序列长度 (需与缓存时一致)
+# LongCat 支持更长序列, 推荐: 512 (默认), 1024 (长描述)
+max_sequence_length = 512
+
 [[dataset.sources]]
 cache_directory = "/path/to/your/dataset/cache"
 num_repeats = 10

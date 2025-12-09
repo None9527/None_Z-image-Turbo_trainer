@@ -87,6 +87,7 @@ class LongCatImageEditPipeline(
         transformer=LongCatImageTransformer2DModel,
         image_encoder: CLIPVisionModelWithProjection = None,
         feature_extractor: CLIPImageProcessor = None,
+        max_sequence_length: int = 512,
     ):
         super().__init__()
 
@@ -113,7 +114,8 @@ class LongCatImageEditPipeline(
         self.prompt_template_encode_start_idx = 67
         self.prompt_template_encode_end_idx = 5
         self.default_sample_size = 128
-        self.max_tokenizer_len = 512
+        self.max_sequence_length = max_sequence_length
+        self.max_tokenizer_len = max_sequence_length  # 兼容旧代码别名
         self.latent_channels = 16
 
 

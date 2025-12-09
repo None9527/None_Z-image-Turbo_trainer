@@ -100,7 +100,7 @@ seed = 42
 [optimization]
 # 启用自动硬件优化 (核心开关)
 # 启用后，脚本会自动检测显卡型号 (Tier S/A/B) 并设置最佳的底层参数
-# 包括: 混合精度(BF16/FP16), Block Swap, SPDA, SDPA, Worker数量等
+# 包括: 混合精度(BF16/FP16), Block Swap, SDPA, Worker数量等
 auto_optimize = true
 
 # 手动覆盖 (可选)
@@ -130,6 +130,10 @@ shuffle = true
 
 # 是否启用分桶
 enable_bucket = true
+
+# 文本编码最大序列长度 (需与缓存时一致)
+# 推荐: 512 (默认), 256 (节省显存/加速), 1024 (长文本描述)
+max_sequence_length = 512
 
 # --- 数据集列表 ---
 # 支持多个 [[dataset.sources]] 块，用于混合训练

@@ -244,67 +244,41 @@ class HardwareDetector:
         # 基于 Tier 的配置
         if gpu_tier == 'tier_s':
             # Tier S (32GB+: A100/H100/5090): 全性能模式
-            # 显存充裕，不需要任何压缩技术
             optimized.update({
-                # ❌ 关闭所有压缩/交换功能
-                'block_swap_enabled': False,
-                'block_swap_block_size': 0,
-                'block_swap_cpu_buffer_size': 0,
-                'block_swap_swap_threshold': 0,
-                
-                # ❌ 关闭 SPDA - 单卡无意义
-                'spda_enabled': False,
+                # ✅ Blocks Swap (用户可通过前端手动启用)
+                'blocks_to_swap': 0,  # 32G 显存充裕，默认不开启
                 
                 # ✅ 使用最高效的注意力后端
                 'sdpa_enabled': True,
                 'sdpa_flash_attention': True,
                 'attention_backend': 'sdpa',
                 
-                # max_grad_norm 由用户在 toml 中指定，不自动覆盖
                 'dataloader_num_workers': 16,
-                
-                # xformers 作为备选
                 'xformers_enabled': self.xformers_info.get('available', False),
             })
             
         elif gpu_tier == 'tier_a':
             # Tier A (24GB级: 3090/4090): 高性能模式
-            # 24GB 跑 LoRA 是"富裕仗"，不需要 Block Swap 等极限压缩
             optimized.update({
-                # ❌ 关闭 Block Swap - 24GB 显存足够，开启只会拖慢速度
-                'block_swap_enabled': False,
-                'block_swap_block_size': 0,
-                'block_swap_cpu_buffer_size': 0,
-                'block_swap_swap_threshold': 0,
+                # ✅ Blocks Swap (用户可通过前端手动设置)
+                'blocks_to_swap': 0,  # 24G 显存富裕，默认不开启
                 
-                # ❌ 关闭 SPDA - 单卡无意义，只增加开销
-                'spda_enabled': False,
-                
-                # ✅ 使用 PyTorch 原生 SDPA (自动调用 Flash Attention)
+                # ✅ 使用 PyTorch 原生 SDPA
                 'sdpa_enabled': True,
                 'sdpa_flash_attention': True,
-                'attention_backend': 'sdpa',  # 优先使用原生 SDPA
+                'attention_backend': 'sdpa',
                 
-                # max_grad_norm 由用户在 toml 中指定，不自动覆盖
                 'dataloader_num_workers': 8,
-                
-                # xformers 作为备选
                 'xformers_enabled': self.xformers_info.get('available', False),
             })
             
         elif gpu_tier == 'tier_b':
-            # Tier B (16GB级: 4080/4070TiS/P100): 精简模式
-            # 16GB 跑 LoRA 足够，但需要精简配置，避免不必要的内存开销
+            # Tier B (16GB级: 4080/4070TiS/P100): 内存优化模式
+            # 16GB 需要精细配置，建议使用 blocks_to_swap 降低显存峰值
             optimized.update({
-                # ❌ 关闭 Block Swap - 16GB LoRA 训练不需要，开启反而可能卡死
-                # Block Swap 的监控线程和内存交换在边界条件下可能导致死锁
-                'block_swap_enabled': False,
-                'block_swap_block_size': 0,
-                'block_swap_cpu_buffer_size': 0,
-                'block_swap_swap_threshold': 0,
-                
-                # ❌ 关闭 SPDA - 单卡无意义
-                'spda_enabled': False,
+                # ✅ Block Swap - 16G 建议开启，默认 4 块
+                # 用户可在前端调整 0-8 块，越大越省显存但越慢
+                'blocks_to_swap': 4,
                 
                 # ✅ 使用原生 SDPA (内存效率最高)
                 'sdpa_enabled': True,
@@ -314,21 +288,17 @@ class HardwareDetector:
                 # ✅ 强制启用梯度检查点 - 16GB 必须开启
                 'gradient_checkpointing': True,
                 
-                # ✅ 减少数据加载器线程数 - 节省 CPU 内存，避免与 GPU 竞争
+                # ✅ 减少数据加载器线程数 - 节省 CPU 内存
                 'dataloader_num_workers': 2,
                 
                 # ✅ 增加梯度累积 - 减少单次显存峰值
                 'gradient_accumulation_steps': 4,
                 
-                # xformers 作为备选
                 'xformers_enabled': self.xformers_info.get('available', False),
             })
             
-        # SPDA World Size
-        if optimized.get('spda_enabled', False):
-            optimized['spda_world_size'] = torch.cuda.device_count()
-        else:
-            optimized['spda_world_size'] = 1
+            # 16G 使用更保守的显存比例 (95%)
+            optimized['max_memory_mb'] = int(memory_gb * 1024 * 0.95)
             
         # 输出优化的配置
         # 根据 tier 显示不同的模式描述

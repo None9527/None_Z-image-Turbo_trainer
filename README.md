@@ -171,9 +171,10 @@ python -m zimage_trainer.cache_latents \
 
 # 生成 Text 缓存（文本编码）
 python -m zimage_trainer.cache_text_encoder \
-    --model_path ./zimage_models \
-    --dataset_path ./datasets/your_dataset \
-    --output_dir ./datasets/your_dataset
+    --text_encoder ./zimage_models/text_encoder \
+    --input_dir ./datasets/your_dataset \
+    --output_dir ./datasets/your_dataset \
+    --max_length 512  # 可选: 256/512/1024, 默认 512
 ```
 
 ### 启动训练
@@ -277,6 +278,11 @@ learning_rate = 1e-4    # 学习率
 num_train_epochs = 10   # 训练轮数
 snr_gamma = 5.0         # Min-SNR 加权
 loss_mode = "standard"  # 损失模式（见下方说明）
+
+[dataset]
+batch_size = 1
+enable_bucket = true
+max_sequence_length = 512  # 文本序列长度 (需与缓存一致)
 ```
 
 ### 🎨 损失模式 (Loss Mode)
