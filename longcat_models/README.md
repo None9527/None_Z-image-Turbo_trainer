@@ -8,7 +8,7 @@ library_name: transformers
 ---
 
 <div align="center">
-  <img src="https://github.com/meituan-longcat/LongCat-Flash-Chat/blob/main/figures/longcat_logo.svg" width="45%" alt="LongCat-Image" />
+  <img src="assets/longcat-image_logo.svg" width="45%" alt="LongCat-Image" />
 </div>
 <hr>
 
@@ -27,85 +27,14 @@ library_name: transformers
   <a href='https://huggingface.co/meituan-longcat/LongCat-Image-Edit'><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-LongCat--Image--Edit-blue'></a>
 </div>
 
-
-
 ## Introduction
-We introduce **LongCat-Image**, a pioneering open-source and bilingual (Chinese-English) foundation model for image generation, designed to address core challenges in multilingual text rendering, photorealism, deployment efficiency, and developer accessibility prevalent in current leading models.
+**LongCat-Image-Dev** is a development variant of LongCat-Image, representing a mid-training checkpoint that is released to facilitate downstream development by the community, such as secondary fine-tuning via SFT, LoRA, and other customization methods. 
 <div align="center">
-  <img src="assets/model_struct.jpg" width="90%" alt="LongCat-Image Generation Examples" />
+  <img src="assets/model_struct.jpg" width="90%" alt="LongCat-Image Model Architecture" />
 </div>
-
 
 ### Key Features
-- 🌟 **Exceptional Efficiency and Performance**: With only **6B parameters**, LongCat-Image surpasses numerous open-source models that are several times larger across multiple benchmarks, demonstrating the immense potential of efficient model design.
-- 🌟 **Powerful Chinese Text Rendering**: LongCat-Image demonstrates superior accuracy and stability in rendering common Chinese characters compared to existing SOTA open-source models and achieves industry-leading coverage of the Chinese dictionary.
-- 🌟 **Remarkable Photorealism**: Through an innovative data strategy and training framework, LongCat-Image achieves remarkable photorealism in generated images.
 
-[//]: # (For more details, please refer to the comprehensive [***LongCat-Image Technical Report***]&#40;https://arxiv.org/abs/2412.11963&#41;.)
+- 🔧 **True Developer-Ready Foundation**: Unlike typical release-the-final-model-only approaches, we provide the Dev—a high-plasticity, unconstrained state that avoids RL-induced rigidity. This enables seamless fine-tuning without fighting against over-aligned parameter spaces.
 
-## 🎨 Showcase
-
-<div align="center">
-  <img src="assets/gallery.jpeg" width="90%" alt="LongCat-Image Generation Examples" />
-</div>
-
-## Quick Start
-
-### Installation
-
-Clone the repo:
-
-```shell
-git clone --single-branch --branch main https://github.com/meituan-longcat/LongCat-Image
-cd LongCat-Image
-```
-
-Install dependencies:
-
-```shell
-# create conda environment
-conda create -n longcat-image python=3.10
-conda activate longcat-image
-
-# install other requirements
-pip install -r requirements.txt
-python setup.py develop
-```
-
-### Run Text-to-Image Generation
-**💡 Tip**: Using a stronger LLM model for prompt engineering can further improve image generation quality. Please refer to [inference_t2i.py](https://github.com/meituan-longcat/LongCat-Image/blob/main/scripts/inference_t2i.py#L28) for detailed usage.
-```shell
-import torch
-from transformers import AutoProcessor
-from longcat_image.models import LongCatImageTransformer2DModel
-from longcat_image.pipelines import LongCatImagePipeline
-
-device = torch.device('cuda')
-checkpoint_dir = './weights/LongCat-Image'
-
-text_processor = AutoProcessor.from_pretrained( checkpoint_dir, subfolder = 'tokenizer'  )
-transformer = LongCatImageTransformer2DModel.from_pretrained( checkpoint_dir , subfolder = 'transformer', 
-    torch_dtype=torch.bfloat16, use_safetensors=True).to(device)
-
-pipe = LongCatImagePipeline.from_pretrained(
-    checkpoint_dir,
-    transformer=transformer,
-    text_processor=text_processor
-)
-pipe.to(device, torch.bfloat16)
-
-prompt = '一个年轻的亚裔女性，身穿黄色针织衫，搭配白色项链。她的双手放在膝盖上，表情恬静。背景是一堵粗糙的砖墙，午后的阳光温暖地洒在她身上，营造出一种宁静而温馨的氛围。镜头采用中距离视角，突出她的神态和服饰的细节。光线柔和地打在她的脸上，强调她的五官和饰品的质感，增加画面的层次感与亲和力。整个画面构图简洁，砖墙的纹理与阳光的光影效果相得益彰，突显出人物的优雅与从容。'
-
-image = pipe(
-    prompt,
-    height=768,
-    width=1344,
-    guidance_scale=4.5,
-    num_inference_steps=50,
-    num_images_per_prompt=1,
-    generator=torch.Generator("cpu").manual_seed(43),
-    enable_cfg_renorm=True,
-    enable_prompt_rewrite=True # Reusing the text encoder as a built-in prompt rewriter
-).images[0]
-image.save('./t2i_example.png')
-```
+- 🛠️ **Full-Stack Training Framework**: We ship production-ready code for **SFT**, **LoRA fine-tuning**, **DPO/GRPO/MPO alignment**, and **specialized Edit training**. Every stage from pre-training data curation to reward model integration is reproducible, empowering researchers to build on our exact pipeline rather than reverse-engineering it.

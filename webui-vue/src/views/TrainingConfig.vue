@@ -477,204 +477,142 @@
               <el-input-number v-model="config.acrf.snr_floor" :min="0" :max="0.5" :step="0.01" controls-position="right" class="input-fixed" />
             </div>
 
-            <div class="subsection-label">损失函数模式 (LOSS MODE)</div>
-            <div class="form-row-full">
-              <label>
-                损失模式
-                <el-tooltip content="standard=L1+Cosine, frequency=频域感知, style=风格结构, mixed=自定义混合(recommended)" placement="top">
+            <div class="subsection-label">MSE/L2 混合损失（构图增强）</div>
+            <div class="control-row">
+              <span class="label">
+                启用 L2 混合
+                <el-tooltip content="同batch混合锚点流+自由流L2损失，增强构图学习能力" placement="top">
                   <el-icon class="help-icon"><QuestionFilled /></el-icon>
                 </el-tooltip>
-              </label>
-              <el-select v-model="config.training.loss_mode" style="width: 100%">
-                <el-option label="Standard (L1+Cosine)" value="standard" />
-                <el-option label="Mixed (自定义混合 - 推荐)" value="mixed" />
-                <el-option label="Frequency (频域感知 - 锐化细节)" value="frequency" />
-                <el-option label="Style (风格结构 - 光影色调)" value="style" />
-                <el-option label="Unified (统一模式 - 两者结合)" value="unified" />
-              </el-select>
+              </span>
+              <el-switch v-model="config.acrf.raft_mode" />
+            </div>
+            <div class="control-row" v-if="config.acrf.raft_mode">
+              <span class="label">
+                自由流比例
+                <el-tooltip content="全时间步L2随机采样的比例，推荐0.3 (30%)" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-slider v-model="config.acrf.free_stream_ratio" :min="0.1" :max="0.5" :step="0.05" :show-tooltip="false" class="slider-flex" />
+              <el-input-number v-model="config.acrf.free_stream_ratio" :min="0.1" :max="0.5" :step="0.05" controls-position="right" class="input-fixed" />
+            </div>
+
+            <div class="subsection-label">Latent Jitter（构图突破）</div>
+            <div class="control-row">
+              <span class="label">
+                Latent Jitter Scale
+                <el-tooltip content="在 x_t 上添加空间抠动，垂直于流线，真正改变构图的关键。推荐 0.03-0.05" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-slider v-model="config.acrf.latent_jitter_scale" :min="0" :max="0.1" :step="0.01" :show-tooltip="false" class="slider-flex" />
+              <el-input-number v-model="config.acrf.latent_jitter_scale" :min="0" :max="0.1" :step="0.01" controls-position="right" class="input-fixed" />
+            </div>
+
+            <div class="subsection-label">损失权重配置（自由组合）</div>
+            
+            <!-- 基础损失: L1 + Cosine (始终显示) -->
+            <div class="control-row">
+              <span class="label">
+                Lambda L1 (Charbonnier)
+                <el-tooltip content="基础L1损失权重，平滑的像素距离损失" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-slider v-model="config.training.lambda_l1" :min="0" :max="2" :step="0.1" :show-tooltip="false" class="slider-flex" />
+              <el-input-number v-model="config.training.lambda_l1" :min="0" :max="2" :step="0.1" controls-position="right" class="input-fixed" />
+            </div>
+            <div class="control-row">
+              <span class="label">
+                Lambda Cosine
+                <el-tooltip content="方向一致性损失权重，约束速度方向正确" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-slider v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.05" :show-tooltip="false" class="slider-flex" />
+              <el-input-number v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.05" controls-position="right" class="input-fixed" />
             </div>
             
-            <!-- Standard 模式参数 -->
-            <template v-if="config.training.loss_mode === 'standard'">
-              <div class="subsection-label">标准损失权重 (STANDARD LOSS)</div>
+            <!-- 频域感知损失 (开关+权重+子参数) -->
+            <div class="subsection-label">频域感知损失</div>
+            <div class="control-row">
+              <span class="label">
+                启用频域感知
+                <el-tooltip content="锐化细节纹理，增强高频信息" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-switch v-model="config.training.enable_freq" />
+            </div>
+            <template v-if="config.training.enable_freq">
               <div class="control-row">
                 <span class="label">
-                  Lambda L1 (Charbonnier)
-                  <el-tooltip content="基础损失权重，平滑L1损失，默认1.0" placement="top">
+                  混合权重 (λ_freq)
+                  <el-tooltip content="与基础损失混合的比例" placement="top">
                     <el-icon class="help-icon"><QuestionFilled /></el-icon>
                   </el-tooltip>
                 </span>
-                <el-slider v-model="config.training.lambda_l1" :min="0" :max="2" :step="0.1" :show-tooltip="false" class="slider-flex" />
-                <el-input-number v-model="config.training.lambda_l1" :min="0" :max="2" :step="0.1" controls-position="right" class="input-fixed" />
+                <el-slider v-model="config.training.lambda_freq" :min="0.1" :max="1" :step="0.1" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.training.lambda_freq" :min="0.1" :max="1" :step="0.1" controls-position="right" class="input-fixed" />
               </div>
-              <div class="control-row">
-                <span class="label">
-                  Lambda Cosine
-                  <el-tooltip content="余弦相似度损失权重，帮助保持整体结构，0=关闭" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-slider v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.01" :show-tooltip="false" class="slider-flex" />
-                <el-input-number v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.01" controls-position="right" class="input-fixed" />
-              </div>
-            </template>
-            
-            <!-- Mixed 模式参数 - 自定义混合 -->
-            <template v-if="config.training.loss_mode === 'mixed'">
-              <div class="subsection-label">基础损失权重 (BASE LOSS)</div>
-              <div class="control-row">
-                <span class="label">
-                  Lambda L1 (Charbonnier)
-                  <el-tooltip content="基础L1损失权重，平滑的单像素距离损失" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-slider v-model="config.training.lambda_l1" :min="0" :max="2" :step="0.1" :show-tooltip="false" class="slider-flex" />
-                <el-input-number v-model="config.training.lambda_l1" :min="0" :max="2" :step="0.1" controls-position="right" class="input-fixed" />
-              </div>
-              <div class="control-row">
-                <span class="label">
-                  Lambda Cosine
-                  <el-tooltip content="方向一致性损失权重，约束速度方向正确" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-slider v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.05" :show-tooltip="false" class="slider-flex" />
-                <el-input-number v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.05" controls-position="right" class="input-fixed" />
-              </div>
-              
-              <div class="subsection-label">可选损失混合 (OPTIONAL LOSS MIX)</div>
-              <div class="control-row">
-                <span class="label">
-                  Lambda Freq (频域感知)
-                  <el-tooltip content="频域感知损失权重，锐化细节纹理，0=关闭" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-slider v-model="config.training.lambda_freq" :min="0" :max="1" :step="0.1" :show-tooltip="false" class="slider-flex" />
-                <el-input-number v-model="config.training.lambda_freq" :min="0" :max="1" :step="0.1" controls-position="right" class="input-fixed" />
-              </div>
-              <div class="control-row">
-                <span class="label">
-                  Lambda Style (风格结构)
-                  <el-tooltip content="风格结构损失权重，学习光影色调，0=关闭" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-slider v-model="config.training.lambda_style" :min="0" :max="1" :step="0.1" :show-tooltip="false" class="slider-flex" />
-                <el-input-number v-model="config.training.lambda_style" :min="0" :max="1" :step="0.1" controls-position="right" class="input-fixed" />
-              </div>
-              
-              <!-- 频域感知子参数 -->
-              <template v-if="config.training.lambda_freq > 0">
-                <div class="subsection-label">频域感知子参数</div>
-                <div class="control-row">
-                  <span class="label">高频权重 (alpha_hf)</span>
-                  <el-slider v-model="config.training.alpha_hf" :min="0" :max="2" :step="0.1" :show-tooltip="false" class="slider-flex" />
-                  <el-input-number v-model="config.training.alpha_hf" :min="0" :max="2" :step="0.1" controls-position="right" class="input-fixed" />
-                </div>
-                <div class="control-row">
-                  <span class="label">低频权重 (beta_lf)</span>
-                  <el-slider v-model="config.training.beta_lf" :min="0" :max="1" :step="0.05" :show-tooltip="false" class="slider-flex" />
-                  <el-input-number v-model="config.training.beta_lf" :min="0" :max="1" :step="0.05" controls-position="right" class="input-fixed" />
-                </div>
-              </template>
-              
-              <!-- 风格结构子参数 -->
-              <template v-if="config.training.lambda_style > 0">
-                <div class="subsection-label">风格结构子参数</div>
-                <div class="control-row">
-                  <span class="label">结构锁 (λ_struct)</span>
-                  <el-slider v-model="config.training.lambda_struct" :min="0" :max="2" :step="0.1" :show-tooltip="false" class="slider-flex" />
-                  <el-input-number v-model="config.training.lambda_struct" :min="0" :max="2" :step="0.1" controls-position="right" class="input-fixed" />
-                </div>
-                <div class="control-row">
-                  <span class="label">光影 (λ_light)</span>
-                  <el-slider v-model="config.training.lambda_light" :min="0" :max="1" :step="0.1" :show-tooltip="false" class="slider-flex" />
-                  <el-input-number v-model="config.training.lambda_light" :min="0" :max="1" :step="0.1" controls-position="right" class="input-fixed" />
-                </div>
-                <div class="control-row">
-                  <span class="label">色调 (λ_color)</span>
-                  <el-slider v-model="config.training.lambda_color" :min="0" :max="1" :step="0.1" :show-tooltip="false" class="slider-flex" />
-                  <el-input-number v-model="config.training.lambda_color" :min="0" :max="1" :step="0.1" controls-position="right" class="input-fixed" />
-                </div>
-                <div class="control-row">
-                  <span class="label">质感 (λ_tex)</span>
-                  <el-slider v-model="config.training.lambda_tex" :min="0" :max="1" :step="0.1" :show-tooltip="false" class="slider-flex" />
-                  <el-input-number v-model="config.training.lambda_tex" :min="0" :max="1" :step="0.1" controls-position="right" class="input-fixed" />
-                </div>
-              </template>
-            </template>
-            
-            <!-- Frequency 模式参数 -->
-            <template v-if="config.training.loss_mode === 'frequency' || config.training.loss_mode === 'unified'">
-              <div class="subsection-label">频域感知参数 (FREQUENCY AWARE)</div>
-              <div class="control-row">
-                <span class="label">
-                  高频权重 (alpha_hf)
-                  <el-tooltip content="高频增强权重，提升边缘/纹理锐度，推荐 0.5~1.0" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
+              <div class="control-row" style="margin-left: 20px;">
+                <span class="label">↳ 高频权重 (alpha_hf)</span>
                 <el-slider v-model="config.training.alpha_hf" :min="0" :max="2" :step="0.1" :show-tooltip="false" class="slider-flex" />
                 <el-input-number v-model="config.training.alpha_hf" :min="0" :max="2" :step="0.1" controls-position="right" class="input-fixed" />
               </div>
-              <div class="control-row">
-                <span class="label">
-                  低频权重 (beta_lf)
-                  <el-tooltip content="低频锁定权重，保持整体结构方向，推荐 0.1~0.3" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
+              <div class="control-row" style="margin-left: 20px;">
+                <span class="label">↳ 低频权重 (beta_lf)</span>
                 <el-slider v-model="config.training.beta_lf" :min="0" :max="1" :step="0.05" :show-tooltip="false" class="slider-flex" />
                 <el-input-number v-model="config.training.beta_lf" :min="0" :max="1" :step="0.05" controls-position="right" class="input-fixed" />
               </div>
             </template>
             
-            <!-- Style 模式参数 -->
-            <template v-if="config.training.loss_mode === 'style' || config.training.loss_mode === 'unified'">
-              <div class="subsection-label">风格结构参数 (STYLE STRUCTURE)</div>
+            <!-- 风格结构损失 (开关+权重+子参数) -->
+            <div class="subsection-label">风格结构损失</div>
+            <div class="control-row">
+              <span class="label">
+                启用风格结构
+                <el-tooltip content="学习光影色调、结构布局" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-switch v-model="config.training.enable_style" />
+            </div>
+            <template v-if="config.training.enable_style">
               <div class="control-row">
                 <span class="label">
-                  结构锁 (lambda_struct)
-                  <el-tooltip content="SSIM 结构锁定，防止脸崩/五官错位，推荐 0.5~1.0" placement="top">
+                  混合权重 (λ_style)
+                  <el-tooltip content="与基础损失混合的比例" placement="top">
                     <el-icon class="help-icon"><QuestionFilled /></el-icon>
                   </el-tooltip>
                 </span>
+                <el-slider v-model="config.training.lambda_style" :min="0.1" :max="1" :step="0.1" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.training.lambda_style" :min="0.1" :max="1" :step="0.1" controls-position="right" class="input-fixed" />
+              </div>
+              <div class="control-row" style="margin-left: 20px;">
+                <span class="label">↳ 结构锁 (λ_struct)</span>
                 <el-slider v-model="config.training.lambda_struct" :min="0" :max="2" :step="0.1" :show-tooltip="false" class="slider-flex" />
                 <el-input-number v-model="config.training.lambda_struct" :min="0" :max="2" :step="0.1" controls-position="right" class="input-fixed" />
               </div>
-              <div class="control-row">
-                <span class="label">
-                  光影学习 (lambda_light)
-                  <el-tooltip content="学习大师的 S 曲线、对比度，推荐 0.3~0.8" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
+              <div class="control-row" style="margin-left: 20px;">
+                <span class="label">↳ 光影 (λ_light)</span>
                 <el-slider v-model="config.training.lambda_light" :min="0" :max="1" :step="0.1" :show-tooltip="false" class="slider-flex" />
                 <el-input-number v-model="config.training.lambda_light" :min="0" :max="1" :step="0.1" controls-position="right" class="input-fixed" />
               </div>
-              <div class="control-row">
-                <span class="label">
-                  色调迁移 (lambda_color)
-                  <el-tooltip content="学习冷暖调/胶片感，推荐 0.2~0.5" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
+              <div class="control-row" style="margin-left: 20px;">
+                <span class="label">↳ 色调 (λ_color)</span>
                 <el-slider v-model="config.training.lambda_color" :min="0" :max="1" :step="0.1" :show-tooltip="false" class="slider-flex" />
                 <el-input-number v-model="config.training.lambda_color" :min="0" :max="1" :step="0.1" controls-position="right" class="input-fixed" />
               </div>
-              <div class="control-row">
-                <span class="label">
-                  质感增强 (lambda_tex)
-                  <el-tooltip content="高频 L1 增强清晰度/颗粒感，推荐 0.3~0.5" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
+              <div class="control-row" style="margin-left: 20px;">
+                <span class="label">↳ 质感 (λ_tex)</span>
                 <el-slider v-model="config.training.lambda_tex" :min="0" :max="1" :step="0.1" :show-tooltip="false" class="slider-flex" />
                 <el-input-number v-model="config.training.lambda_tex" :min="0" :max="1" :step="0.1" controls-position="right" class="input-fixed" />
               </div>
             </template>
+
+
 
             <div class="subsection-label">其他高级参数</div>
             <div class="control-row">
@@ -802,7 +740,12 @@ function getDefaultConfig() {
       // Min-SNR 加权参数（公用）
       snr_gamma: 5.0,
       snr_floor: 0.1,
-      use_anchor: true
+      use_anchor: true,
+      // MSE/L2 混合模式参数
+      raft_mode: false,
+      free_stream_ratio: 0.3,
+      // Latent Jitter (构图突破)
+      latent_jitter_scale: 0.0
     },
     network: {
       dim: 8,
@@ -820,18 +763,17 @@ function getDefaultConfig() {
       lr_scheduler: 'constant',
       lr_warmup_steps: 0,
       lr_num_cycles: 1,
-      // 损失模式
-      loss_mode: 'standard',
       // 基础损失权重
       lambda_l1: 1.0,
       lambda_cosine: 0.1,
-      // 混合模式权重
-      lambda_freq: 0,
-      lambda_style: 0,
-      // 频域感知参数
+      // 频域感知 (开关+权重+子参数)
+      enable_freq: false,
+      lambda_freq: 0.3,
       alpha_hf: 1.0,
       beta_lf: 0.2,
-      // 风格结构参数
+      // 风格结构 (开关+权重+子参数)
+      enable_style: false,
+      lambda_style: 0.3,
       lambda_struct: 1.0,
       lambda_light: 0.5,
       lambda_color: 0.3,

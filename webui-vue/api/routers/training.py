@@ -49,21 +49,20 @@ def get_default_config():
             "output_name": "zimage-lora",
             "learning_rate": 0.0001,
             "weight_decay": 0,
-            "lr_scheduler": "constant",  # 少样本训练推荐 constant，cosine 需谨慎设置 warmup
-            "lr_warmup_steps": 0,  # 默认不预热，少样本场景预热步数应 < 5% 总步数
+            "lr_scheduler": "constant",
+            "lr_warmup_steps": 0,
             "lr_num_cycles": 1,
-            # 损失模式
-            "loss_mode": "standard",
             # 基础损失权重
             "lambda_l1": 1.0,
             "lambda_cosine": 0.1,
-            # 混合模式权重
-            "lambda_freq": 0,
-            "lambda_style": 0,
-            # 频域感知参数
+            # 频域感知 (开关+权重+子参数)
+            "enable_freq": False,
+            "lambda_freq": 0.3,
             "alpha_hf": 1.0,
             "beta_lf": 0.2,
-            # 风格结构参数
+            # 风格结构 (开关+权重+子参数)
+            "enable_style": False,
+            "lambda_style": 0.3,
             "lambda_struct": 1.0,
             "lambda_light": 0.5,
             "lambda_color": 0.3,
@@ -525,6 +524,11 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         f"use_dynamic_shifting = {'true' if config.get('acrf', {}).get('use_dynamic_shifting', True) else 'false'}",
         f"base_shift = {config.get('acrf', {}).get('base_shift', 0.5)}",
         f"max_shift = {config.get('acrf', {}).get('max_shift', 1.15)}",
+        # RAFT 混合模式参数
+        f"raft_mode = {'true' if config.get('acrf', {}).get('raft_mode', False) else 'false'}",
+        f"free_stream_ratio = {config.get('acrf', {}).get('free_stream_ratio', 0.3)}",
+        # Latent Jitter (构图突破)
+        f"latent_jitter_scale = {config.get('acrf', {}).get('latent_jitter_scale', 0.0)}",
         "",
         "[lora]",
         f"network_dim = {config.get('network', {}).get('dim', 8)}",
@@ -538,15 +542,17 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         f'lr_scheduler = "{config.get("training", {}).get("lr_scheduler", "constant")}"',
         f"lr_warmup_steps = {config.get('training', {}).get('lr_warmup_steps', 0)}",
         f"lr_num_cycles = {config.get('training', {}).get('lr_num_cycles', 1)}",
-        # Standard 模式参数
-        f"lambda_fft = {config.get('training', {}).get('lambda_fft', 0)}",
-        f"lambda_cosine = {config.get('training', {}).get('lambda_cosine', 0)}",
-        # 损失模式
-        f'loss_mode = "{config.get("training", {}).get("loss_mode", "standard")}"',
-        # 频域感知参数
+        # 基础损失权重
+        f"lambda_l1 = {config.get('training', {}).get('lambda_l1', 1.0)}",
+        f"lambda_cosine = {config.get('training', {}).get('lambda_cosine', 0.1)}",
+        # 频域感知损失 (开关+权重+子参数)
+        f"enable_freq = {'true' if config.get('training', {}).get('enable_freq', False) else 'false'}",
+        f"lambda_freq = {config.get('training', {}).get('lambda_freq', 0.3)}",
         f"alpha_hf = {config.get('training', {}).get('alpha_hf', 1.0)}",
         f"beta_lf = {config.get('training', {}).get('beta_lf', 0.2)}",
-        # 风格结构参数
+        # 风格结构损失 (开关+权重+子参数)
+        f"enable_style = {'true' if config.get('training', {}).get('enable_style', False) else 'false'}",
+        f"lambda_style = {config.get('training', {}).get('lambda_style', 0.3)}",
         f"lambda_struct = {config.get('training', {}).get('lambda_struct', 1.0)}",
         f"lambda_light = {config.get('training', {}).get('lambda_light', 0.5)}",
         f"lambda_color = {config.get('training', {}).get('lambda_color', 0.3)}",

@@ -92,31 +92,41 @@ def parse_args():
     parser.add_argument("--lr_warmup_steps", type=int, default=0, help="Warmup 步数")
     parser.add_argument("--lr_num_cycles", type=int, default=1, help="Cosine 调度器的循环次数")
     
-    parser.add_argument("--lambda_fft", type=float, default=0.1, help="FFT Loss 权重")
-    parser.add_argument("--lambda_cosine", type=float, default=0.1, help="Cosine Loss 权重")
-    
     # Min-SNR 加权参数（统一应用于所有 loss 模式）
     parser.add_argument("--snr_gamma", type=float, default=5.0, help="Min-SNR gamma (0=禁用, 推荐5.0)")
     parser.add_argument("--snr_floor", type=float, default=0.1, help="Min-SNR 保底权重 (10步模型关键参数，推荐0.1)")
     
-    # 损失模式参数
-    parser.add_argument("--loss_mode", type=str, default="standard",
-        choices=["standard", "frequency", "style", "unified", "mixed"],
-        help="损失模式: standard=L1+Cosine, frequency=频域感知, style=风格结构, unified=统一模式, mixed=自定义混合")
-    
-    # 损失权重参数 (mixed 模式下生效，其他模式也使用对应权重)
+    # 损失权重参数
     parser.add_argument("--lambda_l1", type=float, default=1.0, help="Charbonnier/L1 Loss 权重")
     parser.add_argument("--lambda_cosine", type=float, default=0.1, help="Cosine Loss 权重")
-    parser.add_argument("--lambda_freq", type=float, default=0.0, help="频域感知 Loss 权重 (mixed模式)")
-    parser.add_argument("--lambda_style", type=float, default=0.0, help="风格结构 Loss 权重 (mixed模式)")
     
-    # 频域感知 Loss 参数 (loss_mode=frequency 或 unified)
-    parser.add_argument("--alpha_hf", type=float, default=1.0, help="高频增强权重 (频域模式)")
-    parser.add_argument("--beta_lf", type=float, default=0.2, help="低频锁定权重 (频域模式)")
-    parser.add_argument("--lf_magnitude_weight", type=float, default=0.0, help="低频幅度约束 (防止发灰)")
+    # 频域感知损失 (开关+权重+子参数)
+    parser.add_argument("--enable_freq", action="store_true", help="启用频域感知损失")
+    parser.add_argument("--lambda_freq", type=float, default=0.3, help="频域感知 Loss 权重")
+    
+    # 风格结构损失 (开关+权重+子参数)
+    parser.add_argument("--enable_style", action="store_true", help="启用风格结构损失")
+    parser.add_argument("--lambda_style", type=float, default=0.3, help="风格结构 Loss 权重")
+    
+    # L2 损失独立采样配置（全时间步随机采样，不使用锚点）
+    parser.add_argument("--lambda_mse", type=float, default=0.0, help="L2/MSE Loss 权重 (0=禁用)")
+    parser.add_argument("--mse_use_anchor", type=bool, default=False, help="L2 是否使用锚点 (False=全时间步随机)")
+    
+    # RAFT 混合模式参数 (同 batch 混合锚点流+自由流)
+    parser.add_argument("--free_stream_ratio", type=float, default=0.3, help="自由流比例 (0.3=30%% 全时间步随机)")
+    parser.add_argument("--raft_mode", action="store_true", help="启用 RAFT 同 batch 混合模式")
+    
+    # Latent Jitter: 空间抠动 (垂直于流线方向，真正改变构图的关键)
+    # 推荐 0.03-0.05，配合 target = x0 - x_t_perturbed
+    parser.add_argument("--latent_jitter_scale", type=float, default=0.0, help="Latent 空间抠动幅度 (0=禁用, 推荐 0.03-0.05)")
+    
+    # 频域感知 Loss 子参数
+    parser.add_argument("--alpha_hf", type=float, default=1.0, help="高频增强权重")
+    parser.add_argument("--beta_lf", type=float, default=0.2, help="低频锁定权重")
+    parser.add_argument("--lf_magnitude_weight", type=float, default=0.0, help="低频幅度约束")
     parser.add_argument("--downsample_factor", type=int, default=4, help="低频提取降采样因子")
     
-    # 风格结构 Loss 参数 (loss_mode=style 或 unified)
+    # 风格结构 Loss 子参数
     parser.add_argument("--lambda_struct", type=float, default=1.0, help="结构锁权重 (SSIM)")
     parser.add_argument("--lambda_light", type=float, default=0.5, help="光影学习权重 (L通道统计)")
     parser.add_argument("--lambda_color", type=float, default=0.3, help="色调迁移权重 (ab通道统计)")
@@ -465,15 +475,17 @@ def main():
             snr_floor=snr_floor,
         )
     
-    # 3.6. 创建高级损失函数 (根据 loss_mode)
-    loss_mode = getattr(args, 'loss_mode', 'standard')
-    logger.info(f"\n[LOSS] 损失模式: {loss_mode}")
+    # 3.6. 创建高级损失函数 (基于开关判断)
+    logger.info(f"\n[LOSS] 自由组合损失模式")
+    logger.info(f"  [基础] lambda_l1={args.lambda_l1}, lambda_cosine={args.lambda_cosine}")
     
     frequency_loss_fn = None
     style_loss_fn = None
     
-    if loss_mode in ['frequency', 'unified']:
-        logger.info(f"  [频域感知] alpha_hf={args.alpha_hf}, beta_lf={args.beta_lf}")
+    # 频域感知损失 (开关控制)
+    enable_freq = getattr(args, 'enable_freq', False)
+    if enable_freq:
+        logger.info(f"  [频域感知] ✅ 启用 lambda={args.lambda_freq}, alpha_hf={args.alpha_hf}, beta_lf={args.beta_lf}")
         frequency_loss_fn = FrequencyAwareLoss(
             alpha_hf=args.alpha_hf,
             beta_lf=args.beta_lf,
@@ -482,8 +494,10 @@ def main():
             lf_magnitude_weight=args.lf_magnitude_weight,
         )
     
-    if loss_mode in ['style', 'unified']:
-        logger.info(f"  [风格结构] struct={args.lambda_struct}, light={args.lambda_light}, color={args.lambda_color}, tex={args.lambda_tex}")
+    # 风格结构损失 (开关控制)
+    enable_style = getattr(args, 'enable_style', False)
+    if enable_style:
+        logger.info(f"  [风格结构] ✅ 启用 lambda={args.lambda_style}, struct={args.lambda_struct}")
         style_loss_fn = LatentStyleStructureLoss(
             lambda_struct=args.lambda_struct,
             lambda_light=args.lambda_light,
@@ -592,10 +606,23 @@ def main():
                 # 生成噪声
                 noise = torch.randn_like(latents)
                 
-                # AC-RF 采样
+                # AC-RF 采样 (时间步 jitter)
                 noisy_latents, timesteps, target_velocity = acrf_trainer.sample_batch(
                     latents, noise, jitter_scale=args.jitter_scale
                 )
+                
+                # === Latent Jitter: 空间抠动 (垂直于流线，改变构图的关键) ===
+                latent_jitter_scale = getattr(args, 'latent_jitter_scale', 0.0)
+                if latent_jitter_scale > 0:
+                    # 在 x_t 上添加空间抖动，把状态“推离”完美流线
+                    latent_jitter = torch.randn_like(noisy_latents) * latent_jitter_scale
+                    noisy_latents_perturbed = noisy_latents + latent_jitter
+                    
+                    # 关键: 重新计算 target，指向真实 x_0 (Ground Truth)
+                    # v_target = x_0 - x_t_perturbed (不是 Teacher 输出!)
+                    target_velocity = noise - latents  # v = epsilon - x0 (RF 公式)
+                    # 但输入是扰动后的 x_t
+                    noisy_latents = noisy_latents_perturbed
                 
                 # 准备模型输入
                 # Z-Image expects List[Tensor(C, 1, H, W)]
@@ -647,12 +674,12 @@ def main():
                 else:
                     snr_weights = None
                 
-                if loss_mode == 'standard':
-                    # 标准模式：Charbonnier(L1) + Cosine
-                    loss = args.lambda_l1 * loss_l1 + args.lambda_cosine * loss_cosine
-                    
-                elif loss_mode == 'frequency':
-                    # 频域感知模式
+                # === 自由组合损失 (权重控制) ===
+                # 基础损失: L1 + Cosine
+                loss = args.lambda_l1 * loss_l1 + args.lambda_cosine * loss_cosine
+                
+                # 可选: 频域感知损失
+                if enable_freq and frequency_loss_fn is not None:
                     freq_loss, freq_comps = frequency_loss_fn(
                         pred_v=model_pred,
                         target_v=target_velocity,
@@ -661,73 +688,97 @@ def main():
                         num_train_timesteps=1000,
                         return_components=True,
                     )
-                    loss = freq_loss
-                    loss_components.update({k: v.item() for k, v in freq_comps.items()})
-                    
-                elif loss_mode == 'style':
-                    # 风格结构模式
-                    style_loss, style_comps = style_loss_fn(
-                        pred_v=model_pred,
-                        target_v=target_velocity,
-                        noisy_latents=noisy_latents,
-                        timesteps=timesteps,
-                        num_train_timesteps=1000,
-                        return_components=True,
-                    )
-                    loss = style_loss
-                    loss_components.update({k: v.item() for k, v in style_comps.items()})
-                    
-                elif loss_mode == 'unified':
-                    # 统一模式：组合频域和风格损失
-                    freq_loss, freq_comps = frequency_loss_fn(
-                        pred_v=model_pred,
-                        target_v=target_velocity,
-                        noisy_latents=noisy_latents,
-                        timesteps=timesteps,
-                        num_train_timesteps=1000,
-                        return_components=True,
-                    )
-                    style_loss, style_comps = style_loss_fn(
-                        pred_v=model_pred,
-                        target_v=target_velocity,
-                        noisy_latents=noisy_latents,
-                        timesteps=timesteps,
-                        num_train_timesteps=1000,
-                        return_components=True,
-                    )
-                    loss = (freq_loss + style_loss) / 2
+                    loss = loss + args.lambda_freq * freq_loss
                     loss_components['freq'] = freq_loss.item()
+                
+                # 可选: 风格结构损失
+                if enable_style and style_loss_fn is not None:
+                    style_loss, style_comps = style_loss_fn(
+                        pred_v=model_pred,
+                        target_v=target_velocity,
+                        noisy_latents=noisy_latents,
+                        timesteps=timesteps,
+                        num_train_timesteps=1000,
+                        return_components=True,
+                    )
+                    loss = loss + args.lambda_style * style_loss
                     loss_components['style'] = style_loss.item()
+                
+                # === RAFT: 同 Batch 混合模式 (锚点流 + 自由流) ===
+                raft_mode = getattr(args, 'raft_mode', False)
+                free_stream_ratio = getattr(args, 'free_stream_ratio', 0.3)
+                lambda_mse = getattr(args, 'lambda_mse', 0.0)
+                
+                if raft_mode and free_stream_ratio > 0:
+                    # RAFT 模式: 同 batch 内混合计算自由流损失
+                    batch_size = latents.shape[0]
                     
-                elif loss_mode == 'mixed':
-                    # 混合模式：按权重组合所有损失
-                    loss = args.lambda_l1 * loss_l1 + args.lambda_cosine * loss_cosine
+                    # 自由流: 全时间步随机采样
+                    free_sigmas = torch.rand(batch_size, device=latents.device, dtype=latents.dtype)
+                    shift = args.shift
+                    free_sigmas = (free_sigmas * shift) / (1 + (shift - 1) * free_sigmas)
+                    free_sigmas = free_sigmas.clamp(0.001, 0.999)
                     
-                    # 可选：添加频域损失
-                    if args.lambda_freq > 0:
-                        freq_loss, freq_comps = frequency_loss_fn(
-                            pred_v=model_pred,
-                            target_v=target_velocity,
-                            noisy_latents=noisy_latents,
-                            timesteps=timesteps,
-                            num_train_timesteps=1000,
-                            return_components=True,
-                        )
-                        loss = loss + args.lambda_freq * freq_loss
-                        loss_components['freq'] = freq_loss.item()
+                    # 构造自由流加噪 latents
+                    sigma_broadcast = free_sigmas.view(batch_size, 1, 1, 1)
+                    free_noisy = sigma_broadcast * noise + (1 - sigma_broadcast) * latents
+                    free_target = noise - latents  # v-prediction
                     
-                    # 可选：添加风格损失
-                    if args.lambda_style > 0:
-                        style_loss, style_comps = style_loss_fn(
-                            pred_v=model_pred,
-                            target_v=target_velocity,
-                            noisy_latents=noisy_latents,
-                            timesteps=timesteps,
-                            num_train_timesteps=1000,
-                            return_components=True,
-                        )
-                        loss = loss + args.lambda_style * style_loss
-                        loss_components['style'] = style_loss.item()
+                    # 自由流前向传播 (参与梯度!)
+                    free_input = free_noisy.unsqueeze(2)
+                    free_input_list = list(free_input.unbind(dim=0))
+                    free_t_norm = (1000 - free_sigmas * 1000) / 1000.0
+                    free_t_norm = free_t_norm.to(dtype=weight_dtype)
+                    
+                    free_pred_list = transformer(
+                        x=free_input_list,
+                        t=free_t_norm,
+                        cap_feats=vl_embed,
+                    )[0]
+                    free_pred = torch.stack(free_pred_list, dim=0).squeeze(2)
+                    free_pred = -free_pred  # Z-Image 负号
+                    
+                    # 自由流 L2 损失
+                    loss_free = F.mse_loss(free_pred, free_target)
+                    
+                    # RAFT 混合: loss_total = loss_anchor + ratio * loss_free
+                    loss = loss + free_stream_ratio * loss_free
+                    loss_components['loss_free'] = loss_free.item()
+                
+                elif lambda_mse > 0:
+                    # 兼容旧版: 独立 L2 损失 (不参与梯度)
+                    mse_use_anchor = getattr(args, 'mse_use_anchor', False)
+                    if mse_use_anchor:
+                        mse_pred = model_pred
+                        mse_target = target_velocity
+                    else:
+                        batch_size = latents.shape[0]
+                        mse_sigmas = torch.rand(batch_size, device=latents.device, dtype=latents.dtype)
+                        shift = args.shift
+                        mse_sigmas = (mse_sigmas * shift) / (1 + (shift - 1) * mse_sigmas)
+                        mse_sigmas = mse_sigmas.clamp(0.001, 0.999)
+                        
+                        sigma_broadcast = mse_sigmas.view(batch_size, 1, 1, 1)
+                        mse_noisy = sigma_broadcast * noise + (1 - sigma_broadcast) * latents
+                        mse_target = noise - latents
+                        
+                        mse_input = mse_noisy.unsqueeze(2)
+                        mse_input_list = list(mse_input.unbind(dim=0))
+                        mse_t_norm = (1000 - mse_sigmas * 1000) / 1000.0
+                        mse_t_norm = mse_t_norm.to(dtype=weight_dtype)
+                        
+                        with torch.no_grad():
+                            mse_pred_list = transformer(
+                                x=mse_input_list,
+                                t=mse_t_norm,
+                                cap_feats=vl_embed,
+                            )[0]
+                        mse_pred = torch.stack(mse_pred_list, dim=0).squeeze(2)
+                        mse_pred = -mse_pred
+                    
+                    loss_mse = F.mse_loss(mse_pred, mse_target)
+                    loss = loss + lambda_mse * loss_mse
+                    loss_components['mse'] = loss_mse.item()
                 
                 # 应用 SNR 加权
                 if snr_weights is not None:
@@ -760,28 +811,13 @@ def main():
                 # 获取当前学习率
                 current_lr = lr_scheduler.get_last_lr()[0]
                 
-                # 打印进度供前端解析（根据损失模式输出不同信息）
-                if loss_mode == 'standard':
-                    print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema_loss={ema_loss:.4f} lr={current_lr:.2e}", flush=True)
-                elif loss_mode == 'frequency':
-                    hf = loss_components.get('loss_hf', 0)
-                    lf = loss_components.get('loss_lf', 0)
-                    print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} hf={hf:.4f} lf={lf:.4f} lr={current_lr:.2e}", flush=True)
-                elif loss_mode == 'style':
-                    struct = loss_components.get('loss_struct', 0)
-                    light = loss_components.get('loss_light', 0)
-                    color = loss_components.get('loss_color', 0)
-                    print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} struct={struct:.4f} light={light:.4f} color={color:.4f} lr={current_lr:.2e}", flush=True)
-                elif loss_mode == 'unified':
-                    freq = loss_components.get('freq', 0)
-                    style = loss_components.get('style', 0)
-                    print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} freq={freq:.4f} style={style:.4f} lr={current_lr:.2e}", flush=True)
-                elif loss_mode == 'mixed':
-                    l1 = loss_components.get('l1', 0)
-                    cosine = loss_components.get('cosine', 0)
-                    freq = loss_components.get('freq', 0)
-                    style = loss_components.get('style', 0)
-                    print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} l1={l1:.4f} cosine={cosine:.4f} freq={freq:.4f} style={style:.4f} lr={current_lr:.2e}", flush=True)
+                # 打印进度供前端解析
+                l1 = loss_components.get('l1', 0)
+                cosine = loss_components.get('cosine', 0)
+                freq = loss_components.get('freq', 0)
+                style = loss_components.get('style', 0)
+                free = loss_components.get('loss_free', 0)
+                print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} l1={l1:.4f} cos={cosine:.4f} freq={freq:.4f} style={style:.4f} free={free:.4f} lr={current_lr:.2e}", flush=True)
                 
             # 执行内存优化 (清理缓存等)
             memory_optimizer.optimize_training_step()

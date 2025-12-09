@@ -22,6 +22,16 @@ shift = 3.0
 # 用于"增厚"流形，防止过拟合于精确的锚点
 jitter_scale = 0.02
 
+# RAFT 混合模式（增强构图学习）
+# 同 batch 内混合锚点流和全时间步自由流
+raft_mode = false
+free_stream_ratio = 0.3  # 自由流比例 0.3=30%
+
+# Latent Jitter（构图突破 - 核心参数）
+# 在 x_t 上添加空间抖动，垂直于流线，真正改变构图的关键
+# ⚠️ 比 jitter_scale 更重要！推荐 0.03-0.05
+latent_jitter_scale = 0.0
+
 [lora]
 # LoRA Rank (维度)
 # 建议: 8-16 (Turbo 模型不宜过大)
@@ -50,11 +60,25 @@ lr_warmup_steps = 100
 lr_num_cycles = 1
 
 # Loss 权重配置
-# FFT Loss: 频域一致性，帮助保持细节纹理
-lambda_fft = 0.1
-
-# Cosine Loss: 速度方向一致性，帮助保持直线结构
+# 基础损失 (必须)
+lambda_l1 = 1.0
 lambda_cosine = 0.1
+
+# 频域感知损失 (开关+权重+子参数)
+# 锐化细节纹理
+enable_freq = false
+lambda_freq = 0.3
+alpha_hf = 1.0
+beta_lf = 0.2
+
+# 风格结构损失 (开关+权重+子参数)
+# 学习光影色调
+enable_style = false
+lambda_style = 0.3
+lambda_struct = 1.0
+lambda_light = 0.5
+lambda_color = 0.3
+lambda_tex = 0.5
 
 # Min-SNR 加权 (减少不同时间步的 loss 波动)
 # 0 = 禁用, 推荐值 5.0
