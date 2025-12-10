@@ -525,7 +525,10 @@ def main():
                 
                 # === RAFT: L2 混合模式 (锚点流 + 自由流) ===
                 l2_loss_val = 0.0
-                if args.raft_mode and args.free_stream_ratio > 0:
+                raft_mode = getattr(args, 'raft_mode', False)
+                free_stream_ratio = getattr(args, 'free_stream_ratio', 0.3)
+                
+                if raft_mode and free_stream_ratio > 0:
                     # 自由流: 全时间步均匀随机采样
                     free_sigmas = torch.rand(batch_size, device=latents.device, dtype=weight_dtype)
                     # Z-Image shift 变换
