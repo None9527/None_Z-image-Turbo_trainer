@@ -563,6 +563,9 @@ def main():
                     
                     free_pred = torch.stack(free_pred_list, dim=0).squeeze(2)
                     
+                    # Z-Image output is negated (与锚点流一致)
+                    free_pred = -free_pred
+                    
                     # 自由流 L2 损失
                     l2_loss = F.mse_loss(free_pred, free_target)
                     loss = loss + args.free_stream_ratio * l2_loss
