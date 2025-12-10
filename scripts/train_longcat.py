@@ -164,6 +164,14 @@ def parse_args():
             
         parser.set_defaults(**defaults)
         args = parser.parse_args()
+    
+    # 确保布尔值正确解析 (TOML 可能返回字符串)
+    for bool_arg in ['use_anchor', 'use_dynamic_shifting', 'gradient_checkpointing', 'raft_mode']:
+        val = getattr(args, bool_arg, None)
+        if isinstance(val, str):
+            setattr(args, bool_arg, val.lower() in ('true', '1', 'yes'))
+        elif val is not None:
+            setattr(args, bool_arg, bool(val))
         
     # 验证必要参数
     if not args.dit:
@@ -444,6 +452,7 @@ def main():
     logger.info("="*60)
     logger.info(f"输出目录: {args.output_dir}")
     logger.info(f"Turbo 步数: {args.turbo_steps}")
+    logger.info(f"锚点采样: {args.use_anchor}")
     logger.info(f"动态 Shift: {args.use_dynamic_shifting}")
     logger.info(f"Base Shift: {args.base_shift}, Max Shift: {args.max_shift}")
     logger.info(f"LoRA rank: {args.network_dim}")
@@ -727,11 +736,16 @@ def main():
                 loss_components['l1'] = loss_l1.item()
                 
                 # === Cosine Loss (方向一致性) ===
-                pred_flat = model_pred.view(model_pred.shape[0], -1)
-                target_flat = target_velocity.view(target_velocity.shape[0], -1)
-                cos_sim = F.cosine_similarity(pred_flat, target_flat, dim=1).mean()
-                loss_cosine = 1.0 - cos_sim
-                loss_components['cosine'] = loss_cosine.item()
+                cos_loss_val = 0.0
+                if args.lambda_cosine > 0:
+                    pred_flat = model_pred.view(model_pred.shape[0], -1)
+                    target_flat = target_velocity.view(target_velocity.shape[0], -1)
+                    cos_sim = F.cosine_similarity(pred_flat, target_flat, dim=1).mean()
+                    loss_cosine = 1.0 - cos_sim
+                    cos_loss_val = loss_cosine.item()
+                else:
+                    loss_cosine = torch.tensor(0.0, device=model_pred.device)
+                loss_components['cosine'] = cos_loss_val
                 
                 # === 自由组合损失 (权重控制) ===
                 # 基础损失: L1 + Cosine
