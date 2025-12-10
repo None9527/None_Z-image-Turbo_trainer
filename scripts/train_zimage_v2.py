@@ -372,7 +372,7 @@ def main():
             
         logger.info(f"\nEpoch {epoch + 1}/{args.num_train_epochs}")
         
-        for step, batch in enumerate(tqdm(dataloader, desc=f"Epoch {epoch+1}", disable=not accelerator.is_main_process)):
+        for step, batch in enumerate(tqdm(dataloader, desc=f"Epoch {epoch+1}", disable=True)):
             if _interrupted:
                 break
                 
@@ -505,7 +505,7 @@ def main():
                     cosine = loss_components.get('cosine', 0)
                     freq = loss_components.get('freq', 0)
                     style = loss_components.get('style', 0)
-                    print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} l1={l1:.4f} cos={cosine:.4f} freq={freq:.4f} style={style:.4f} lr={current_lr:.2e}", flush=True)
+                    print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} l1={l1:.4f} cos={cosine:.4f} freq={freq:.4f} style={style:.4f} L2=0.0000 lr={current_lr:.2e}", flush=True)
         
         # Save checkpoint
         if accelerator.is_main_process and (epoch + 1) % args.save_every_n_epochs == 0:
