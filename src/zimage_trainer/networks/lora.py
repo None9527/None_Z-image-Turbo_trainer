@@ -180,6 +180,16 @@ class LoRANetwork(nn.Module):
                 # Replace forward method
                 module.forward = lora_module.forward
     
+    def to(self, *args, **kwargs):
+        """Move LoRA parameters to device and dtype.
+        
+        IMPORTANT: Call this after apply_to() to ensure LoRA params match model dtype.
+        Example: network.to(device='cuda', dtype=torch.bfloat16)
+        """
+        # Move the ModuleDict (which contains all LoRA modules)
+        self.unet_loras = self.unet_loras.to(*args, **kwargs)
+        return self
+    
     def prepare_optimizer_params(
         self,
         unet_lr: float = 1e-4,

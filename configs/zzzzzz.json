@@ -2,7 +2,7 @@
   "name": "zzzzzz",
   "model_type": "longcat",
   "acrf": {
-    "enable_turbo": false,
+    "enable_turbo": true,
     "turbo_steps": 8,
     "shift": 3,
     "jitter_scale": 0.02,
@@ -14,7 +14,7 @@
     "use_anchor": true,
     "raft_mode": true,
     "free_stream_ratio": 0.3,
-    "latent_jitter_scale": 0,
+    "latent_jitter_scale": 0.01,
     "use_turbo": false
   },
   "network": {
@@ -34,7 +34,7 @@
     "lr_warmup_steps": 140,
     "lr_num_cycles": 1,
     "lambda_l1": 1,
-    "lambda_cosine": 0,
+    "lambda_cosine": 0.05,
     "enable_freq": true,
     "lambda_freq": 0.3,
     "alpha_hf": 1,
@@ -67,10 +67,10 @@
     "blocks_to_swap": 8,
     "num_train_epochs": 20,
     "save_every_n_epochs": 1,
-    "gradient_accumulation_steps": 1,
+    "gradient_accumulation_steps": 2,
     "mixed_precision": "bf16",
     "seed": 42
   },
-  "modified": "2025-12-09T20:28:03.568810",
+  "modified": "2025-12-10T13:33:38.396708",
   "created": "2025-12-05T22:50:07.098159"
 }

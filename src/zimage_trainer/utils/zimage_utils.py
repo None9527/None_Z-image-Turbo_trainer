@@ -282,9 +282,13 @@ def load_transformer(
         Loaded transformer model
     """
     try:
+        # Use local modified version for 12GB training (Frozen + Checkpointing fix)
+        from zimage_trainer.models.transformer_z_image import ZImageTransformer2DModel
+        logger.info("  [LOCAL] 使用本地修复版 ZImageTransformer2DModel (use_reentrant=False)")
+    except ImportError as e:
+        logger.error(f"Failed to load local Z-Image model: {e}")
         from diffusers import ZImageTransformer2DModel
-    except ImportError:
-        raise ImportError("diffusers>=0.32.0 is required for ZImageTransformer2DModel")
+        logger.warning("  [FALLBACK] 使用 diffusers 版本 ZImageTransformer2DModel")
 
     logger.info(f"Loading Z-Image transformer from {transformer_path}")
     

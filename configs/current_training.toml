@@ -1,15 +1,15 @@
-# Z-Image 训练配置 (自动生成)
-# 生成时间: 2025-12-10T00:02:13.246432
-# 模型类型: zimage
+# LongCat-Image 训练配置 (自动生成)
+# 生成时间: 2025-12-10T13:33:41.636408
+# 模型类型: longcat
 
 [model]
-model_type = "zimage"
-dit = "D:/AI/None_Z-image-Turbo_trainer/zimage_models/transformer"
+model_type = "longcat"
+dit = "D:/AI/None_Z-image-Turbo_trainer/longcat_models/transformer"
 output_dir = "D:/AI/None_Z-image-Turbo_trainer/output"
 
 [acrf]
 enable_turbo = true
-turbo_steps = 10
+turbo_steps = 8
 shift = 3
 jitter_scale = 0.02
 snr_gamma = 5
@@ -23,19 +23,19 @@ free_stream_ratio = 0.3
 latent_jitter_scale = 0.01
 
 [lora]
-network_dim = 16
+network_dim = 32
 network_alpha = 16
 
 [training]
-output_name = "111"
+output_name = "zimage-lora"
 optimizer_type = "AdamW8bit"
-learning_rate = 0.0001
+learning_rate = 0.001
 weight_decay = 0
 lr_scheduler = "cosine_with_restarts"
-lr_warmup_steps = 100
+lr_warmup_steps = 140
 lr_num_cycles = 1
 lambda_l1 = 1
-lambda_cosine = 0
+lambda_cosine = 0.05
 enable_freq = true
 lambda_freq = 0.3
 alpha_hf = 1
@@ -46,16 +46,16 @@ lambda_struct = 1
 lambda_light = 0.5
 lambda_color = 0.3
 lambda_tex = 0.5
-num_train_epochs = 10
+num_train_epochs = 20
 save_every_n_epochs = 1
-gradient_accumulation_steps = 1
+gradient_accumulation_steps = 2
 mixed_precision = "bf16"
 seed = 42
 
 [advanced]
-max_grad_norm = 1
+max_grad_norm = 5.5
 gradient_checkpointing = true
-blocks_to_swap = 0
+blocks_to_swap = 8
 
 [optimization]
 auto_optimize = true
@@ -68,5 +68,5 @@ enable_bucket = true
 
 [[dataset.sources]]
 cache_directory = "D:/AI/None_Z-image-Turbo_trainer/datasets/1"
-num_repeats = 59
+num_repeats = 100
 resolution_limit = 1024

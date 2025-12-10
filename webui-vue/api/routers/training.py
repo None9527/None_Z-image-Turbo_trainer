@@ -394,20 +394,20 @@ async def start_training(config: Dict[str, Any]):
         
         # 检查缓存状态(传递model_type)
         cache_info = check_dataset_cache(config, model_type)
-        if not cache_info["has_cache"]:
-            state.add_log(f"缓存不完整 ({model_type}): Latent {cache_info['latent_cached']}/{cache_info['total_images']}, Text {cache_info['text_cached']}/{cache_info['total_images']}", "warning")
+        if not cache_info.get("has_cache", False):
+            state.add_log(f"缓存不完整 ({model_type}): Latent {cache_info.get('latent_cached', 0)}/{cache_info.get('total_images', 0)}, Text {cache_info.get('text_cached', 0)}/{cache_info.get('total_images', 0)}", "warning")
             return {
                 "success": False,
                 "needs_cache": True,
-                "total_images": cache_info["total_images"],
-                "latent_cached": cache_info["latent_cached"],
-                "text_cached": cache_info["text_cached"],
-                "latent_missing": cache_info["latent_missing"],
-                "text_missing": cache_info["text_missing"],
+                "total_images": cache_info.get("total_images", 0),
+                "latent_cached": cache_info.get("latent_cached", 0),
+                "text_cached": cache_info.get("text_cached", 0),
+                "latent_missing": cache_info.get("latent_missing", 0),
+                "text_missing": cache_info.get("text_missing", 0),
                 "message": f"缓存不完整，需要先生成缓存"
             }
         
-        state.add_log(f"缓存检查通过: {cache_info['latent_cached']} latent, {cache_info['text_cached']} text", "info")
+        state.add_log(f"缓存检查通过: {cache_info.get('latent_cached', 0)} latent, {cache_info.get('text_cached', 0)} text", "info")
         
         # 获取模型类型
         model_type = config.get("model_type", "zimage")
@@ -427,8 +427,8 @@ async def start_training(config: Dict[str, Any]):
         
         # 根据模型类型选择对应的训练脚本
         if model_type == "zimage":
-            # Z-Image 使用 AC-RF 训练脚本
-            train_script = PROJECT_ROOT / "scripts" / "train_acrf.py"
+            # Z-Image 使用 AC-RF V2 训练脚本 (重构优化版)
+            train_script = PROJECT_ROOT / "scripts" / "train_zimage_v2.py"
             cmd = [
                 python_exe, "-m", "accelerate.commands.launch",
                 "--mixed_precision", mixed_precision,

@@ -473,12 +473,13 @@ def main():
         dtype=weight_dtype,
     )
     logger.info(f"Transformer dtype: {next(transformer.parameters()).dtype}")
-    transformer.requires_grad_(False)
-    transformer.train()
     
+    # Enable gradient checkpointing BEFORE freeze (critical order)
     if args.gradient_checkpointing:
         transformer.enable_gradient_checkpointing()
         logger.info("  [OK] 已启用梯度检查点")
+    
+    transformer.train()
     
     # 1.5 初始化显存优化器
     logger.info("\n[MEM] 初始化显存优化器...")
@@ -505,7 +506,7 @@ def main():
         transformer.apply_memory_optimization(memory_optimizer)
         logger.info("  [INIT] 已应用显存优化策略")
     
-    # 2. 创建 LoRA 网络
+    # 2. 创建 LoRA 网络 (BEFORE freeze - critical order)
     logger.info(f"\n[SETUP] 创建 LongCat LoRA 网络 (rank={args.network_dim})...")
     network = LongCatLoRANetwork(
         transformer,
@@ -520,6 +521,13 @@ def main():
         logger.info(f"LoRA 参数 dtype: {trainable_params[0].dtype}")
     param_count = sum(p.numel() for p in trainable_params)
     logger.info(f"可训练参数: {param_count:,} ({param_count/1e6:.2f}M)")
+    
+    # Freeze base model AFTER LoRA is applied (critical order)
+    # This ensures LoRA params remain trainable while base model is frozen
+    for name, param in transformer.named_parameters():
+        if "lora" not in name.lower():
+            param.requires_grad = False
+    logger.info("  [FREEZE] 基础模型已冻结 (LoRA 参数保持可训练)")
     
     # 3. 创建数据加载器
     logger.info("\n[DATA] 加载 LongCat 数据集...")
