@@ -352,6 +352,12 @@ def main():
         )
         logger.info(f"  [Style] Enabled lambda={args.lambda_style}, struct={args.lambda_struct}, light={args.lambda_light}, color={args.lambda_color}, tex={args.lambda_tex}")
     
+    # RAFT L2 混合模式
+    if args.raft_mode:
+        logger.info(f"  [RAFT] L2 混合模式 Enabled, free_stream_ratio={args.free_stream_ratio}")
+    else:
+        logger.info(f"  [RAFT] L2 混合模式 Disabled")
+    
     # =========================================================================
     # 6. DataLoader
     # =========================================================================
@@ -510,6 +516,45 @@ def main():
                     loss = loss + args.lambda_style * style_loss
                     style_loss_val = style_loss.item()
                 loss_components['style'] = style_loss_val
+                
+                # === RAFT: L2 混合模式 (锚点流 + 自由流) ===
+                l2_loss_val = 0.0
+                if args.raft_mode and args.free_stream_ratio > 0:
+                    # 自由流: 全时间步均匀随机采样
+                    free_sigmas = torch.rand(batch_size, device=latents.device, dtype=weight_dtype)
+                    # Z-Image shift 变换
+                    shift = args.shift if hasattr(args, 'shift') else 3.0
+                    free_sigmas = (free_sigmas * shift) / (1 + (shift - 1) * free_sigmas)
+                    free_sigmas = free_sigmas.clamp(0.001, 0.999)
+                    
+                    # 构造自由流加噪 latents
+                    sigma_bc = free_sigmas.view(batch_size, 1, 1, 1)
+                    free_noisy = sigma_bc * noise + (1 - sigma_bc) * latents
+                    free_target = noise - latents  # v-prediction
+                    
+                    # 自由流前向传播 (参与梯度)
+                    free_input = free_noisy.unsqueeze(2)
+                    if args.gradient_checkpointing:
+                        free_input.requires_grad_(True)
+                    free_input_list = list(free_input.unbind(dim=0))
+                    
+                    free_t = 1000 * free_sigmas  # 转回 timestep
+                    free_t_norm = (1000 - free_t) / 1000.0
+                    free_t_norm = free_t_norm.to(dtype=weight_dtype)
+                    
+                    free_pred_list = transformer(
+                        x=free_input_list,
+                        t=free_t_norm,
+                        cap_feats=vl_embed,
+                    )[0]
+                    
+                    free_pred = torch.stack(free_pred_list, dim=0).squeeze(2)
+                    
+                    # 自由流 L2 损失
+                    l2_loss = F.mse_loss(free_pred, free_target)
+                    loss = loss + args.free_stream_ratio * l2_loss
+                    l2_loss_val = l2_loss.item()
+                loss_components['L2'] = l2_loss_val
                 
                 # SNR weighting
                 snr_weights = compute_snr_weights(
