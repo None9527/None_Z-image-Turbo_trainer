@@ -36,7 +36,7 @@ from diffusers.optimization import get_scheduler
 
 # Local imports
 from zimage_trainer.networks.lora import LoRANetwork, ZIMAGE_TARGET_NAMES, ZIMAGE_ADALN_NAMES, EXCLUDE_PATTERNS
-from zimage_trainer.dataset.dataloader import create_dataloader
+from zimage_trainer.dataset.dataloader import create_dataloader, create_reg_dataloader, get_reg_config
 from zimage_trainer.acrf_trainer import ACRFTrainer
 from zimage_trainer.utils.snr_utils import compute_snr_weights
 from zimage_trainer.utils.l2_scheduler import L2RatioScheduler, create_l2_scheduler_from_args
@@ -421,6 +421,19 @@ def main():
     dataloader = create_dataloader(args)
     logger.info(f"  Dataset size: {len(dataloader)} batches")
     
+    # 正则数据集加载 (防止过拟合)
+    reg_dataloader = create_reg_dataloader(args)
+    reg_config = get_reg_config(args)
+    reg_iterator = None
+    if reg_dataloader:
+        reg_weight = reg_config.get('weight', 1.0)
+        reg_ratio = reg_config.get('ratio', 0.5)
+        logger.info(f"  [REG] 正则数据集已加载: {len(reg_dataloader)} batches, weight={reg_weight}, ratio={reg_ratio}")
+    else:
+        reg_weight = 0.0
+        reg_ratio = 0.0
+        logger.info("  [REG] 未启用正则数据集")
+    
     # =========================================================================
     # 7. Optimizer and Scheduler
     # =========================================================================
@@ -726,6 +739,51 @@ def main():
                         style = loss_components.get('style', 0)
                         l2 = loss_components.get('L2', 0)
                         print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} l1={l1:.4f} cos={cosine:.4f} freq={freq:.4f} style={style:.4f} L2={l2:.4f} lr={current_lr:.2e}", flush=True)
+                    
+                    # ========== 正则训练步骤 (按比例执行) ==========
+                    if reg_dataloader and reg_ratio > 0:
+                        # 按比例决定是否执行正则步骤：ratio=0.5 表示每2步执行1次正则
+                        reg_interval = max(1, int(1.0 / reg_ratio))
+                        if global_step % reg_interval == 0:
+                            # 获取正则 batch
+                            if reg_iterator is None:
+                                reg_iterator = iter(reg_dataloader)
+                            try:
+                                reg_batch = next(reg_iterator)
+                            except StopIteration:
+                                reg_iterator = iter(reg_dataloader)
+                                reg_batch = next(reg_iterator)
+                            
+                            # 正则前向传播 (不更新 LoRA, 只更新 network 保持稳定性)
+                            with accelerator.accumulate(transformer):
+                                reg_latents = reg_batch['latents'].to(accelerator.device, dtype=weight_dtype)
+                                reg_vl_embed = reg_batch['vl_embed']
+                                reg_vl_embed = [v.to(accelerator.device, dtype=weight_dtype) for v in reg_vl_embed]
+                                
+                                reg_noise = torch.randn_like(reg_latents)
+                                reg_noisy, reg_t, reg_target = acrf_trainer.sample_batch(
+                                    reg_latents, reg_noise, jitter_scale=args.jitter_scale
+                                )
+                                
+                                reg_input = reg_noisy.unsqueeze(2)
+                                reg_input_list = list(reg_input.unbind(dim=0))
+                                reg_t_norm = (1000 - reg_t) / 1000.0
+                                
+                                reg_pred_list = transformer(
+                                    x=reg_input_list,
+                                    t=reg_t_norm.to(dtype=weight_dtype),
+                                    cap_feats=reg_vl_embed,
+                                )[0]
+                                reg_pred = -torch.stack(reg_pred_list, dim=0).squeeze(2)
+                                
+                                # 简单 L2 损失，保持模型原有能力
+                                reg_loss = F.mse_loss(reg_pred, reg_target) * reg_weight
+                                accelerator.backward(reg_loss)
+                            
+                            if accelerator.sync_gradients:
+                                accelerator.clip_grad_norm_(trainable_params, args.max_grad_norm)
+                                optimizer.step()
+                                optimizer.zero_grad()
         
         # Save checkpoint
         if accelerator.is_main_process and (epoch + 1) % args.save_every_n_epochs == 0:
