@@ -73,12 +73,12 @@ export TRAINER_PORT=${TRAINER_PORT:-$DEFAULT_PORT}
 export TRAINER_HOST=${TRAINER_HOST:-$DEFAULT_HOST}
 export MODEL_PATH=${MODEL_PATH:-"$SCRIPT_DIR/models"}
 export DATASET_PATH=${DATASET_PATH:-"$SCRIPT_DIR/datasets"}
-export OUTPUT_PATH=${OUTPUT_PATH:-"$SCRIPT_DIR/output"}
+export LORA_PATH=${LORA_PATH:-"$SCRIPT_DIR/output"}
 export OLLAMA_HOST=${OLLAMA_HOST:-"http://127.0.0.1:11434"}
 export OLLAMA_MODEL=${OLLAMA_MODEL:-"llama3.2-vision"}
 
 # 确保必要目录存在
-mkdir -p "$DATASET_PATH" "$OUTPUT_PATH" logs
+mkdir -p "$DATASET_PATH" "$LORA_PATH" logs
 
 # 激活虚拟环境
 VENV_DIR="$SCRIPT_DIR/venv"
@@ -110,7 +110,7 @@ echo -e "  端口:       ${YELLOW}$TRAINER_PORT${NC}"
 echo -e "  监听:       ${YELLOW}$TRAINER_HOST${NC}"
 echo -e "  模型路径:   ${YELLOW}$MODEL_PATH${NC}"
 echo -e "  数据集:     ${YELLOW}$DATASET_PATH${NC}"
-echo -e "  输出目录:   ${YELLOW}$OUTPUT_PATH${NC}"
+echo -e "  LoRA输出:   ${YELLOW}$LORA_PATH${NC}"
 echo -e "  Ollama:     ${YELLOW}$OLLAMA_HOST${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""

@@ -80,8 +80,7 @@ def get_model_path(model_type: str, component: str = "base") -> Path:
 # ============================================================================
 # 其他路径
 # ============================================================================
-# LORA_PATH 支持两个环境变量名：OUTPUT_PATH (优先) 或 LORA_PATH
-LORA_PATH = _resolve_path("OUTPUT_PATH", "") or _resolve_path("LORA_PATH", "./output")
+LORA_PATH = _resolve_path("LORA_PATH", "./output")  # LoRA 模型输出目录
 DATASETS_DIR = _resolve_path("DATASET_PATH", "./datasets")
 GENERATION_OUTPUT_PATH = _resolve_path("GENERATION_OUTPUT_PATH", "./outputs")  # 图片生成输出路径
 
@@ -109,7 +108,6 @@ print(f"[CONFIG] DATASET_PATH env = {os.getenv('DATASET_PATH', '<未设置>')}")
 print(f"[CONFIG] DATASETS_DIR     = {DATASETS_DIR}")
 print(f"[CONFIG] DATASETS_DIR 存在 = {DATASETS_DIR.exists()}")
 print("-" * 60)
-print(f"[CONFIG] OUTPUT_PATH env  = {os.getenv('OUTPUT_PATH', '<未设置>')}")
 print(f"[CONFIG] LORA_PATH env    = {os.getenv('LORA_PATH', '<未设置>')}")
 print(f"[CONFIG] LORA_PATH        = {LORA_PATH}")
 print(f"[CONFIG] LORA_PATH 存在   = {LORA_PATH.exists()}")

@@ -91,12 +91,12 @@ if exist "%SCRIPT_DIR%.env" (
 :: Apply defaults
 if "%MODEL_PATH%"=="" set "MODEL_PATH=%SCRIPT_DIR%zimage_models"
 if "%DATASET_PATH%"=="" set "DATASET_PATH=%SCRIPT_DIR%datasets"
-if "%OUTPUT_PATH%"=="" set "OUTPUT_PATH=%SCRIPT_DIR%output"
+if "%LORA_PATH%"=="" set "LORA_PATH=%SCRIPT_DIR%output"
 if "%OLLAMA_HOST%"=="" set "OLLAMA_HOST=http://127.0.0.1:11434"
 
 :: Create directories
 if not exist "%DATASET_PATH%" mkdir "%DATASET_PATH%"
-if not exist "%OUTPUT_PATH%" mkdir "%OUTPUT_PATH%"
+if not exist "%LORA_PATH%" mkdir "%LORA_PATH%"
 if not exist "logs" mkdir "logs"
 
 :: ============================================================================
@@ -123,7 +123,7 @@ echo    Port:        %TRAINER_PORT%
 echo    Host:        %TRAINER_HOST%
 echo    Models:      %MODEL_PATH%
 echo    Datasets:    %DATASET_PATH%
-echo    Output:      %OUTPUT_PATH%
+echo    LoRA Output: %LORA_PATH%
 echo    Ollama:      %OLLAMA_HOST%
 echo ==================================================
 echo.
