@@ -967,13 +967,14 @@ def main():
                 
                 current_lr = lr_scheduler.get_last_lr()[0]
                 
-                # 打印进度供前端解析
-                l1 = loss_components.get('l1', 0)
-                cosine = loss_components.get('cosine', 0)
-                freq = loss_components.get('freq', 0)
-                style = loss_components.get('style', 0)
-                l2 = loss_components.get('L2', 0)
-                print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} l1={l1:.4f} cos={cosine:.4f} freq={freq:.4f} style={style:.4f} L2={l2:.4f} lr={current_lr:.2e}", flush=True)
+                # 打印进度供前端解析 (只让主进程打印，避免多卡日志混乱)
+                if accelerator.is_main_process:
+                    l1 = loss_components.get('l1', 0)
+                    cosine = loss_components.get('cosine', 0)
+                    freq = loss_components.get('freq', 0)
+                    style = loss_components.get('style', 0)
+                    l2 = loss_components.get('L2', 0)
+                    print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} l1={l1:.4f} cos={cosine:.4f} freq={freq:.4f} style={style:.4f} L2={l2:.4f} lr={current_lr:.2e}", flush=True)
             
             # 执行内存优化 (清理缓存等)
             memory_optimizer.optimize_training_step()
