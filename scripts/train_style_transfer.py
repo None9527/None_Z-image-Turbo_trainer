@@ -249,7 +249,8 @@ def main():
     logger.info(f"  Num Epochs = {args.num_train_epochs}")
     logger.info(f"  Total Optimization Steps = {args.max_train_steps}")
     
-    print(f"[TRAINING_INFO] total_steps={args.max_train_steps} total_epochs={args.num_train_epochs}", flush=True)
+    if accelerator.is_main_process:
+        print(f"[TRAINING_INFO] total_steps={args.max_train_steps} total_epochs={args.num_train_epochs}", flush=True)
 
     # 8. 创建优化器
     logger.info(f"\n[SETUP] 初始化优化器: {args.optimizer_type}")
@@ -384,16 +385,17 @@ def main():
                 
                 current_lr = lr_scheduler.get_last_lr()[0]
                 
-                # 打印进度
-                struct_l = loss_components["loss_struct"].item()
-                light_l = loss_components["loss_light"].item()
-                color_l = loss_components["loss_color"].item()
-                tex_l = loss_components["loss_tex"].item()
-                
-                print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} "
-                      f"loss={current_loss:.4f} ema={ema_loss:.4f} "
-                      f"struct={struct_l:.4f} light={light_l:.4f} color={color_l:.4f} tex={tex_l:.4f} "
-                      f"lr={current_lr:.2e}", flush=True)
+                # 打印进度（只让主进程打印）
+                if accelerator.is_main_process:
+                    struct_l = loss_components["loss_struct"].item()
+                    light_l = loss_components["loss_light"].item()
+                    color_l = loss_components["loss_color"].item()
+                    tex_l = loss_components["loss_tex"].item()
+                    
+                    print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} "
+                          f"loss={current_loss:.4f} ema={ema_loss:.4f} "
+                          f"struct={struct_l:.4f} light={light_l:.4f} color={color_l:.4f} tex={tex_l:.4f} "
+                          f"lr={current_lr:.2e}", flush=True)
             
             memory_optimizer.optimize_training_step()
                 

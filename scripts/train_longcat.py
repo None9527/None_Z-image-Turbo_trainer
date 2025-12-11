@@ -652,7 +652,8 @@ def main():
     logger.info(f"  Gradient Accumulation = {args.gradient_accumulation_steps}")
     logger.info(f"  Total Optimization Steps = {max_train_steps}")
     
-    print(f"[TRAINING_INFO] total_steps={max_train_steps} total_epochs={args.num_train_epochs}", flush=True)
+    if accelerator.is_main_process:
+        print(f"[TRAINING_INFO] total_steps={max_train_steps} total_epochs={args.num_train_epochs}", flush=True)
     
     # 5. 创建优化器
     logger.info(f"\n[SETUP] 初始化优化器: {args.optimizer_type}")

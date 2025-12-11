@@ -531,8 +531,9 @@ def main():
     logger.info(f"  Gradient Accumulation = {args.gradient_accumulation_steps}")
     logger.info(f"  Total Optimization Steps = {args.max_train_steps}")
     
-    # 打印总步数供前端解析（关键！tqdm 的 \r 输出无法被 readline 捕获）
-    print(f"[TRAINING_INFO] total_steps={args.max_train_steps} total_epochs={args.num_train_epochs}", flush=True)
+    # 打印总步数供前端解析（只让主进程打印）
+    if accelerator.is_main_process:
+        print(f"[TRAINING_INFO] total_steps={args.max_train_steps} total_epochs={args.num_train_epochs}", flush=True)
 
     # 6. 创建优化器
     logger.info(f"\n[SETUP] 初始化优化器: {args.optimizer_type}")
@@ -832,13 +833,14 @@ def main():
                 # 获取当前学习率
                 current_lr = lr_scheduler.get_last_lr()[0]
                 
-                # 打印进度供前端解析
-                l1 = loss_components.get('l1', 0)
-                cosine = loss_components.get('cosine', 0)
-                freq = loss_components.get('freq', 0)
-                style = loss_components.get('style', 0)
-                free = loss_components.get('loss_free', 0)
-                print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} l1={l1:.4f} cos={cosine:.4f} freq={freq:.4f} style={style:.4f} free={free:.4f} lr={current_lr:.2e}", flush=True)
+                # 打印进度供前端解析（只让主进程打印）
+                if accelerator.is_main_process:
+                    l1 = loss_components.get('l1', 0)
+                    cosine = loss_components.get('cosine', 0)
+                    freq = loss_components.get('freq', 0)
+                    style = loss_components.get('style', 0)
+                    free = loss_components.get('loss_free', 0)
+                    print(f"[STEP] {global_step}/{args.max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} l1={l1:.4f} cos={cosine:.4f} freq={freq:.4f} style={style:.4f} free={free:.4f} lr={current_lr:.2e}", flush=True)
                 
             # 执行内存优化 (清理缓存等)
             memory_optimizer.optimize_training_step()
