@@ -330,6 +330,11 @@ def main():
     exclude_patterns = list(EXCLUDE_PATTERNS)
     
     train_adaln = getattr(args, 'train_adaln', False)
+    # 确保 train_adaln 是布尔值 (TOML 可能返回字符串)
+    if isinstance(train_adaln, str):
+        train_adaln = train_adaln.lower() in ('true', '1', 'yes')
+    train_adaln = bool(train_adaln)
+    
     if train_adaln:
         target_names.extend(ZIMAGE_ADALN_NAMES)
         exclude_patterns = [p for p in exclude_patterns if "adaLN" not in p]

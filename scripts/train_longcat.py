@@ -184,7 +184,7 @@ def parse_args():
         args = parser.parse_args()
     
     # 确保布尔值正确解析 (TOML 可能返回字符串)
-    for bool_arg in ['use_anchor', 'use_dynamic_shifting', 'gradient_checkpointing', 'raft_mode', 'l2_include_anchor']:
+    for bool_arg in ['use_anchor', 'use_dynamic_shifting', 'gradient_checkpointing', 'raft_mode', 'l2_include_anchor', 'train_norm', 'train_single_stream']:
         val = getattr(args, bool_arg, None)
         if isinstance(val, str):
             setattr(args, bool_arg, val.lower() in ('true', '1', 'yes'))

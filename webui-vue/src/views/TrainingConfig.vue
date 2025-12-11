@@ -198,7 +198,7 @@
             
             <!-- LoRA 高级选项 -->
             <div class="subsection-label">高级选项 (LoRA Targets)</div>
-            <div class="control-row" v-if="config.model.model_type === 'zimage'">
+            <div class="control-row" v-if="config.model_type === 'zimage'">
               <span class="label">
                 训练 AdaLN
                 <el-tooltip content="训练 AdaLN 调制层 (激进模式，可能导致过拟合)" placement="top">
@@ -207,7 +207,7 @@
               </span>
               <el-switch v-model="config.lora.train_adaln" />
             </div>
-            <div class="control-row" v-if="config.model.model_type === 'longcat'">
+            <div class="control-row" v-if="config.model_type === 'longcat'">
               <span class="label">
                 训练 Norm 层
                 <el-tooltip content="训练 norm1.linear 和 norm1_context.linear" placement="top">
@@ -216,7 +216,7 @@
               </span>
               <el-switch v-model="config.lora.train_norm" />
             </div>
-            <div class="control-row" v-if="config.model.model_type === 'longcat'">
+            <div class="control-row" v-if="config.model_type === 'longcat'">
               <span class="label">
                 训练单流层
                 <el-tooltip content="训练单流 Transformer 块 (proj_mlp, proj_out)" placement="top">
