@@ -406,10 +406,12 @@ async def get_download_status():
 
 @router.get("/gpu")
 async def get_gpu_info():
-    """Get GPU information using nvidia-smi"""
+    """Get GPU information using nvidia-smi (supports multi-GPU)"""
+    gpus = []
+    
     try:
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name,memory.total,memory.used,utilization.gpu,temperature.gpu",
+            ["nvidia-smi", "--query-gpu=index,name,memory.total,memory.used,utilization.gpu,temperature.gpu",
              "--format=csv,noheader,nounits"],
             capture_output=True,
             text=True,
@@ -419,26 +421,72 @@ async def get_gpu_info():
         )
         
         if result.returncode == 0:
-            parts = result.stdout.strip().split(", ")
-            if len(parts) >= 5:
-                memory_total = float(parts[1]) / 1024  # Convert MB to GB
-                memory_used = float(parts[2]) / 1024
-                return {
-                    "name": parts[0],
-                    "memoryTotal": round(memory_total, 1),
-                    "memoryUsed": round(memory_used, 1),
-                    "memoryPercent": round((memory_used / memory_total) * 100),
-                    "utilization": int(parts[3]),
-                    "temperature": int(parts[4])
-                }
+            lines = result.stdout.strip().split("\n")
+            for line in lines:
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 6:
+                    try:
+                        gpu_index = int(parts[0])
+                        memory_total = float(parts[2]) / 1024  # Convert MB to GB
+                        memory_used = float(parts[3]) / 1024
+                        gpus.append({
+                            "index": gpu_index,
+                            "name": parts[1],
+                            "memoryTotal": round(memory_total, 1),
+                            "memoryUsed": round(memory_used, 1),
+                            "memoryPercent": round((memory_used / memory_total) * 100) if memory_total > 0 else 0,
+                            "utilization": int(parts[4]) if parts[4].strip() else 0,
+                            "temperature": int(parts[5]) if parts[5].strip() else 0
+                        })
+                    except (ValueError, IndexError) as e:
+                        print(f"[GPU] Failed to parse line '{line}': {e}")
+                        continue
+    except FileNotFoundError:
+        print("[GPU] nvidia-smi not found")
     except Exception as e:
-        print(f"GPU info error: {e}")
+        print(f"[GPU] Error: {e}")
     
-    return {
-        "name": "Unknown",
-        "memoryTotal": 0,
-        "memoryUsed": 0,
-        "memoryPercent": 0,
-        "utilization": 0,
-        "temperature": 0
-    }
+    # 返回格式兼容旧版（单卡）和新版（多卡）
+    if len(gpus) == 0:
+        # 无法检测到 GPU
+        return {
+            "name": "Unknown",
+            "memoryTotal": 0,
+            "memoryUsed": 0,
+            "memoryPercent": 0,
+            "utilization": 0,
+            "temperature": 0,
+            "gpus": [],
+            "count": 0
+        }
+    elif len(gpus) == 1:
+        # 单卡，保持向后兼容
+        gpu = gpus[0]
+        return {
+            "name": gpu["name"],
+            "memoryTotal": gpu["memoryTotal"],
+            "memoryUsed": gpu["memoryUsed"],
+            "memoryPercent": gpu["memoryPercent"],
+            "utilization": gpu["utilization"],
+            "temperature": gpu["temperature"],
+            "gpus": gpus,
+            "count": 1
+        }
+    else:
+        # 多卡，汇总信息 + 详细列表
+        total_memory = sum(g["memoryTotal"] for g in gpus)
+        used_memory = sum(g["memoryUsed"] for g in gpus)
+        avg_utilization = sum(g["utilization"] for g in gpus) // len(gpus)
+        max_temp = max(g["temperature"] for g in gpus)
+        
+        return {
+            "name": f"{len(gpus)}x {gpus[0]['name']}",
+            "memoryTotal": round(total_memory, 1),
+            "memoryUsed": round(used_memory, 1),
+            "memoryPercent": round((used_memory / total_memory) * 100) if total_memory > 0 else 0,
+            "utilization": avg_utilization,
+            "temperature": max_temp,
+            "gpus": gpus,
+            "count": len(gpus)
+        }
+
