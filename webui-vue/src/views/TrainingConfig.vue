@@ -383,6 +383,33 @@
               </span>
               <el-input-number v-model="config.advanced.seed" :min="0" controls-position="right" style="width: 150px" />
             </div>
+            
+            <!-- 多卡训练配置 -->
+            <div class="subsection-label">GPU 配置 (MULTI-GPU)</div>
+            <div class="control-row">
+              <span class="label">
+                GPU 数量
+                <el-tooltip content="使用多张 GPU 进行分布式训练，可加速训练但需要足够显存" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-select v-model="config.advanced.num_gpus" style="width: 150px">
+                <el-option label="1 (单卡)" :value="1" />
+                <el-option label="2" :value="2" />
+                <el-option label="3" :value="3" />
+                <el-option label="4" :value="4" />
+                <el-option label="8" :value="8" />
+              </el-select>
+            </div>
+            <div class="control-row">
+              <span class="label">
+                GPU ID
+                <el-tooltip content="指定使用的 GPU 编号，如 '0,1' 或 '2,3'，留空自动选择" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-input v-model="config.advanced.gpu_ids" placeholder="如: 0,1,2" style="width: 150px" />
+            </div>
           </div>
         </el-collapse-item>
 
@@ -891,7 +918,9 @@ function getDefaultConfig() {
       save_every_n_epochs: 1,
       gradient_accumulation_steps: 4,
       mixed_precision: 'bf16',
-      seed: 42
+      seed: 42,
+      num_gpus: 1,
+      gpu_ids: ''
     }
   }
 }

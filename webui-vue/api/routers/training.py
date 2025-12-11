@@ -430,28 +430,41 @@ async def start_training(config: Dict[str, Any]):
         python_exe = sys.executable
         mixed_precision = config.get("advanced", {}).get("mixed_precision", "bf16")
         
+        # 多卡训练参数
+        num_gpus = config.get("advanced", {}).get("num_gpus", 1)
+        gpu_ids = config.get("advanced", {}).get("gpu_ids", "")  # 如 "0,1,2"
+        
         # 根据模型类型选择对应的训练脚本
         if model_type == "zimage":
             # Z-Image 使用 AC-RF V2 训练脚本 (重构优化版)
             train_script = PROJECT_ROOT / "scripts" / "train_zimage_v2.py"
-            cmd = [
-                python_exe, "-m", "accelerate.commands.launch",
-                "--mixed_precision", mixed_precision,
-                str(train_script),
-                "--config", str(config_path)
-            ]
         elif model_type == "longcat":
             # LongCat-Image 使用独立训练脚本
             train_script = PROJECT_ROOT / "scripts" / "train_longcat.py"
-            cmd = [
-                python_exe, "-m", "accelerate.commands.launch",
-                "--mixed_precision", mixed_precision,
-                str(train_script),
-                "--config", str(config_path)
-            ]
         else:
             # 其他模型（未来扩展）
             raise HTTPException(status_code=400, detail=f"不支持的模型类型: {model_type}")
+        
+        # 构建 accelerate 参数
+        accelerate_args = [
+            python_exe, "-m", "accelerate.commands.launch",
+            "--mixed_precision", mixed_precision,
+        ]
+        
+        # 多卡配置
+        if num_gpus > 1:
+            accelerate_args.extend(["--multi_gpu", "--num_processes", str(num_gpus)])
+            if gpu_ids:
+                # 设置 CUDA_VISIBLE_DEVICES
+                state.add_log(f"多卡训练: {num_gpus} GPUs, GPU IDs: {gpu_ids}", "info")
+            else:
+                state.add_log(f"多卡训练: {num_gpus} GPUs (自动选择)", "info")
+        elif gpu_ids:
+            # 单卡但指定了 ID
+            state.add_log(f"单卡训练: GPU {gpu_ids}", "info")
+        
+        # 添加训练脚本和配置
+        cmd = accelerate_args + [str(train_script), "--config", str(config_path)]
         
         state.add_log(f"启动命令: {' '.join(cmd)}", "info")
         state.add_log(f"模型类型: {model_type}, 混合精度: {mixed_precision}", "info")
@@ -459,6 +472,11 @@ async def start_training(config: Dict[str, Any]):
         # 启动训练进程
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
+        
+        # 设置 GPU ID
+        if gpu_ids:
+            env["CUDA_VISIBLE_DEVICES"] = gpu_ids
+            state.add_log(f"CUDA_VISIBLE_DEVICES={gpu_ids}", "info")
         
         state.training_process = subprocess.Popen(
             cmd,
