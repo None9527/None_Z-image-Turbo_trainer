@@ -582,9 +582,9 @@
               
               <div class="form-row-full">
                 <label>选择正则数据集</label>
-                <div class="dataset-actions">
-                  <el-select v-model="selectedRegDataset" placeholder="选择已缓存的数据集" filterable clearable style="flex: 1">
-                    <el-option v-for="ds in cachedDatasets" :key="ds.name" :label="ds.name" :value="ds.cache_directory">
+                <div class="dataset-toolbar">
+                  <el-select v-model="selectedRegDataset" placeholder="从数据集库选择..." clearable @change="onRegDatasetSelect" style="width: 280px">
+                    <el-option v-for="ds in cachedDatasets" :key="ds.path" :label="ds.name" :value="ds.path">
                       <span style="float: left">{{ ds.name }}</span>
                       <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px">{{ ds.files }} 文件</span>
                     </el-option>
@@ -1292,19 +1292,21 @@ function removeDataset(idx: number) {
 }
 
 // 正则数据集操作
-function addRegDataset() {
+function onRegDatasetSelect() {
   if (selectedRegDataset.value) {
     config.value.reg_dataset.datasets.push({
       cache_directory: selectedRegDataset.value,
       num_repeats: 1
     })
     selectedRegDataset.value = ''
-  } else {
-    config.value.reg_dataset.datasets.push({
-      cache_directory: '',
-      num_repeats: 1
-    })
   }
+}
+
+function addRegDataset() {
+  config.value.reg_dataset.datasets.push({
+    cache_directory: '',
+    num_repeats: 1
+  })
 }
 
 function removeRegDataset(idx: number) {
