@@ -271,7 +271,7 @@ def main():
     logger.info("[START] Z-Image AC-RF Training")
     logger.info("=" * 60)
     logger.info(f"Output: {args.output_dir}")
-    logger.info(f"Turbo steps: {args.turbo_steps}")
+    logger.info(f"Turbo mode: {args.enable_turbo} (steps={args.turbo_steps})")
     logger.info(f"LoRA rank: {args.network_dim}")
     
     # Determine weight dtype
@@ -555,8 +555,9 @@ def main():
                 noise = torch.randn_like(latents)
                 
                 # AC-RF sampling (timestep with jitter)
+                # use_anchor=True: Turbo 锚点采样, use_anchor=False: 标准 Flow Matching
                 noisy_latents, timesteps, target_velocity = acrf_trainer.sample_batch(
-                    latents, noise, jitter_scale=args.jitter_scale
+                    latents, noise, jitter_scale=args.jitter_scale, use_anchor=args.enable_turbo
                 )
                 
                 # Latent jitter (optional)
@@ -784,7 +785,7 @@ def main():
                             
                             reg_noise = torch.randn_like(reg_latents)
                             reg_noisy, reg_t, reg_target = acrf_trainer.sample_batch(
-                                reg_latents, reg_noise, jitter_scale=args.jitter_scale
+                                reg_latents, reg_noise, jitter_scale=args.jitter_scale, use_anchor=args.enable_turbo
                             )
                             
                             reg_input = reg_noisy.unsqueeze(2)
