@@ -341,6 +341,7 @@ class ZImageTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOr
         self.rope_theta = rope_theta
         self.t_scale = t_scale
         self.gradient_checkpointing = False
+        self.block_swapper = None  # 块交换器 (可选)
 
         assert len(all_patch_size) == len(all_f_patch_size)
 
@@ -401,6 +402,17 @@ class ZImageTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOr
         self.axes_lens = axes_lens
 
         self.rope_embedder = RopeEmbedder(theta=rope_theta, axes_dims=axes_dims, axes_lens=axes_lens)
+    
+    def set_block_swapper(self, block_swapper):
+        """
+        设置块交换器
+        
+        Args:
+            block_swapper: ForwardBlockSwapper 实例或 None
+        """
+        self.block_swapper = block_swapper
+        if block_swapper is not None:
+            block_swapper.setup(self.layers)
 
     def unpatchify(self, x: List[torch.Tensor], size: List[Tuple], patch_size, f_patch_size) -> List[torch.Tensor]:
         pH = pW = patch_size
@@ -642,13 +654,29 @@ class ZImageTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOr
             unified_attn_mask[i, :seq_len] = 1
 
         if torch.is_grad_enabled() and self.gradient_checkpointing:
-            for layer in self.layers:
+            for i, layer in enumerate(self.layers):
+                # 块交换：将当前层移到 GPU
+                if self.block_swapper is not None:
+                    self.block_swapper.swap_in(i)
+                
                 unified = torch.utils.checkpoint.checkpoint(
                     layer, unified, unified_attn_mask, unified_freqs_cis, adaln_input, use_reentrant=False
                 )
+                
+                # 块交换：将当前层移回 CPU (如果在交换范围内)
+                if self.block_swapper is not None:
+                    self.block_swapper.swap_out(i)
         else:
-            for layer in self.layers:
+            for i, layer in enumerate(self.layers):
+                # 块交换：将当前层移到 GPU
+                if self.block_swapper is not None:
+                    self.block_swapper.swap_in(i)
+                
                 unified = layer(unified, unified_attn_mask, unified_freqs_cis, adaln_input)
+                
+                # 块交换：将当前层移回 CPU (如果在交换范围内)
+                if self.block_swapper is not None:
+                    self.block_swapper.swap_out(i)
 
         unified = self.all_final_layer[f"{patch_size}-{f_patch_size}"](unified, adaln_input)
         unified = list(unified.unbind(dim=0))

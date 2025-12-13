@@ -42,7 +42,6 @@ from zimage_trainer.utils.snr_utils import compute_snr_weights
 from zimage_trainer.utils.l2_scheduler import L2RatioScheduler, create_l2_scheduler_from_args
 from zimage_trainer.losses.frequency_aware_loss import FrequencyAwareLoss
 from zimage_trainer.losses.style_structure_loss import LatentStyleStructureLoss
-from zimage_trainer.utils.memory_optimizer import MemoryOptimizer
 
 # Setup logging
 logging.basicConfig(
@@ -309,19 +308,20 @@ def main():
     transformer.train()
     
     # =========================================================================
-    # 2. Memory Optimizer (Optional)
+    # 2. Block Swapper (真正的块交换)
     # =========================================================================
-    memory_optimizer = None
+    block_swapper = None
     if args.blocks_to_swap > 0:
-        logger.info(f"\n[MEM] Initializing MemoryOptimizer (blocks_to_swap={args.blocks_to_swap})...")
-        memory_config = {
-            'block_swap_enabled': True,
-            'blocks_to_swap': args.blocks_to_swap,
-            'checkpoint_optimization': 'basic' if args.gradient_checkpointing else 'none',
-        }
-        memory_optimizer = MemoryOptimizer(memory_config)
-        memory_optimizer.start()
-        logger.info("  [OK] MemoryOptimizer initialized")
+        from zimage_trainer.utils.block_swapper import create_block_swapper
+        logger.info(f"\n[SWAP] Initializing Block Swapper (blocks_to_swap={args.blocks_to_swap})...")
+        block_swapper = create_block_swapper(
+            blocks_to_swap=args.blocks_to_swap,
+            device=accelerator.device,
+            verbose=True,
+        )
+        # 设置块交换器到模型
+        transformer.set_block_swapper(block_swapper)
+        logger.info("  [OK] Block Swapper attached to transformer")
     
     # =========================================================================
     # 3. Apply LoRA with proper dtype

@@ -230,10 +230,14 @@ async def delete_lora(path: str):
 
 @router.post("/generate")
 async def generate_image(req: GenerationRequest):
-    """生成图片 - 同步版本，支持多模型"""
+    """生成图片 - 同步版本，支持多模型和对比模式"""
     
     try:
         model_type = req.model_type.lower()
+        
+        # 调试日志
+        print(f"[DEBUG] comparison_mode={req.comparison_mode}, lora_path={req.lora_path}")
+        
         pipe = state.get_pipeline(model_type)
         
         # 使用抽象层加载本地模型
@@ -241,26 +245,7 @@ async def generate_image(req: GenerationRequest):
             pipe = load_pipeline_with_adapter(model_type)
             state.set_pipeline(model_type, pipe)
         
-        # LoRA handling (每个模型独立管理)
-        current_lora = state.get_lora_path(model_type)
-        if req.lora_path:
-            if current_lora != req.lora_path:
-                if current_lora:
-                    try:
-                        pipe.unload_lora_weights()
-                    except:
-                        pass
-                pipe.load_lora_weights(req.lora_path)
-                state.set_lora_path(model_type, req.lora_path)
-        else:
-            if current_lora:
-                try:
-                    pipe.unload_lora_weights()
-                except:
-                    pass
-                state.set_lora_path(model_type, None)
-        
-        # Seed
+        # Seed - 在对比模式下需要固定 seed
         generator = None
         actual_seed = req.seed
         if actual_seed != -1:
@@ -269,33 +254,134 @@ async def generate_image(req: GenerationRequest):
             generator = torch.Generator("cuda" if torch.cuda.is_available() else "cpu")
             actual_seed = generator.seed()
         
-        if req.lora_path:
-            pipe.cross_attention_kwargs = {"scale": req.lora_scale}
-        
-        # 根据模型类型调用不同的生成接口
-        if model_type == "zimage":
-            image = pipe(
-                prompt=req.prompt,
-                negative_prompt=req.negative_prompt,
-                num_inference_steps=req.steps,
-                guidance_scale=req.guidance_scale,
-                width=req.width,
-                height=req.height,
-                generator=generator,
-            ).images[0]
-        elif model_type == "longcat":
-            # LongCat/FLUX 使用不同的参数
-            image = pipe(
-                prompt=req.prompt,
-                num_inference_steps=req.steps,
-                guidance_scale=req.guidance_scale,
-                width=req.width,
-                height=req.height,
-                generator=generator,
-            ).images[0]
-        
-        if pipe:
+        # ========== 对比模式：生成两张图 ==========
+        if req.comparison_mode and req.lora_path:
+            print(f"[DEBUG] 进入对比模式分支！")
+            images = []
+            
+            # 1. 先生成无 LoRA 的原图
+            current_lora = state.get_lora_path(model_type)
+            if current_lora:
+                try:
+                    pipe.unload_lora_weights()
+                except:
+                    pass
+                state.set_lora_path(model_type, None)
+            
             pipe.cross_attention_kwargs = None
+            
+            # 重置 generator 确保相同 seed
+            gen_no_lora = torch.Generator("cuda" if torch.cuda.is_available() else "cpu").manual_seed(actual_seed)
+            
+            if model_type == "zimage":
+                image_no_lora = pipe(
+                    prompt=req.prompt,
+                    negative_prompt=req.negative_prompt,
+                    num_inference_steps=req.steps,
+                    guidance_scale=req.guidance_scale,
+                    width=req.width,
+                    height=req.height,
+                    generator=gen_no_lora,
+                ).images[0]
+            elif model_type == "longcat":
+                image_no_lora = pipe(
+                    prompt=req.prompt,
+                    num_inference_steps=req.steps,
+                    guidance_scale=req.guidance_scale,
+                    width=req.width,
+                    height=req.height,
+                    generator=gen_no_lora,
+                ).images[0]
+            
+            images.append(image_no_lora)
+            
+            # 2. 再生成有 LoRA 的效果图
+            pipe.load_lora_weights(req.lora_path)
+            state.set_lora_path(model_type, req.lora_path)
+            pipe.cross_attention_kwargs = {"scale": req.lora_scale}
+            
+            # 重置 generator 确保相同 seed
+            gen_with_lora = torch.Generator("cuda" if torch.cuda.is_available() else "cpu").manual_seed(actual_seed)
+            
+            if model_type == "zimage":
+                image_with_lora = pipe(
+                    prompt=req.prompt,
+                    negative_prompt=req.negative_prompt,
+                    num_inference_steps=req.steps,
+                    guidance_scale=req.guidance_scale,
+                    width=req.width,
+                    height=req.height,
+                    generator=gen_with_lora,
+                ).images[0]
+            elif model_type == "longcat":
+                image_with_lora = pipe(
+                    prompt=req.prompt,
+                    num_inference_steps=req.steps,
+                    guidance_scale=req.guidance_scale,
+                    width=req.width,
+                    height=req.height,
+                    generator=gen_with_lora,
+                ).images[0]
+            
+            images.append(image_with_lora)
+            pipe.cross_attention_kwargs = None
+            
+            # 3. 横向拼接两张图
+            total_width = images[0].width + images[1].width
+            max_height = max(images[0].height, images[1].height)
+            combined = Image.new('RGB', (total_width, max_height))
+            combined.paste(images[0], (0, 0))
+            combined.paste(images[1], (images[0].width, 0))
+            image = combined
+            
+        # ========== 普通模式：生成单张图 ==========
+        else:
+            # LoRA handling (每个模型独立管理)
+            current_lora = state.get_lora_path(model_type)
+            if req.lora_path:
+                if current_lora != req.lora_path:
+                    if current_lora:
+                        try:
+                            pipe.unload_lora_weights()
+                        except:
+                            pass
+                    pipe.load_lora_weights(req.lora_path)
+                    state.set_lora_path(model_type, req.lora_path)
+            else:
+                if current_lora:
+                    try:
+                        pipe.unload_lora_weights()
+                    except:
+                        pass
+                    state.set_lora_path(model_type, None)
+            
+            if req.lora_path:
+                pipe.cross_attention_kwargs = {"scale": req.lora_scale}
+            
+            # 根据模型类型调用不同的生成接口
+            if model_type == "zimage":
+                image = pipe(
+                    prompt=req.prompt,
+                    negative_prompt=req.negative_prompt,
+                    num_inference_steps=req.steps,
+                    guidance_scale=req.guidance_scale,
+                    width=req.width,
+                    height=req.height,
+                    generator=generator,
+                ).images[0]
+            elif model_type == "longcat":
+                # LongCat/FLUX 使用不同的参数
+                image = pipe(
+                    prompt=req.prompt,
+                    num_inference_steps=req.steps,
+                    guidance_scale=req.guidance_scale,
+                    width=req.width,
+                    height=req.height,
+                    generator=generator,
+                ).images[0]
+            
+            if pipe:
+                pipe.cross_attention_kwargs = None
         
         # Save
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -323,7 +409,8 @@ async def generate_image(req: GenerationRequest):
             "filename": filename,
             "timestamp": timestamp,
             "seed": actual_seed,
-            "model_type": model_type
+            "model_type": model_type,
+            "comparison_mode": req.comparison_mode
         }
         
     except Exception as e:
