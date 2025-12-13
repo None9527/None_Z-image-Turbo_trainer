@@ -92,6 +92,7 @@ class ACRFTrainer:
         noise: torch.Tensor,
         jitter_scale: float = 0.02,
         stratified: bool = True,  # 分层采样，减少 loss 跳动
+        use_anchor: bool = True,  # 是否使用锚点采样 (enable_turbo=True)
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         为当前 batch 采样训练数据
@@ -101,6 +102,9 @@ class ACRFTrainer:
             noise: 噪声 (x_1)
             jitter_scale: 锚点抖动幅度
             stratified: 是否使用分层采样（推荐开启，减少 loss 波动）
+            use_anchor: 是否使用锚点采样
+                - True (enable_turbo=True): 只在 Turbo 模型的有效锚点时间步训练
+                - False (enable_turbo=False): 全时间步连续均匀采样，标准 Flow Matching
             
         Returns:
             noisy_latents: 加噪后的 latents (x_t)
@@ -109,46 +113,54 @@ class ACRFTrainer:
         """
         batch_size = latents.shape[0]
         device = latents.device
-        
-        # 1. 选择锚点索引
-        if stratified and batch_size >= self.turbo_steps:
-            # 分层采样：确保每个锚点至少被采样一次
-            base_indices = torch.arange(self.turbo_steps, device=device)
-            repeats = batch_size // self.turbo_steps
-            remainder = batch_size % self.turbo_steps
-            indices = torch.cat([
-                base_indices.repeat(repeats),
-                base_indices[torch.randperm(self.turbo_steps, device=device)[:remainder]]
-            ])
-            indices = indices[torch.randperm(batch_size, device=device)]
-        else:
-            # 随机采样（batch_size 小时）
-            indices = torch.randint(0, self.turbo_steps, (batch_size,), device=device)
-        
-        # 2. 获取对应的 sigma 并添加抖动
-        # 抖动用于"增厚"流形，防止过拟合于精确的锚点
-        # 确保 dtype 与 latents 一致，避免混合精度问题
         dtype = latents.dtype
-        base_sigmas = self.anchor_sigmas.to(device=device, dtype=dtype)[indices]
-        jitter = torch.randn_like(base_sigmas) * jitter_scale
-        sampled_sigmas = (base_sigmas + jitter).clamp(0.001, 0.999) # 避免 0 和 1
+        
+        if use_anchor:
+            # ========== Turbo 模式：锚点采样 ==========
+            # 1. 选择锚点索引
+            if stratified and batch_size >= self.turbo_steps:
+                # 分层采样：确保每个锚点至少被采样一次
+                base_indices = torch.arange(self.turbo_steps, device=device)
+                repeats = batch_size // self.turbo_steps
+                remainder = batch_size % self.turbo_steps
+                indices = torch.cat([
+                    base_indices.repeat(repeats),
+                    base_indices[torch.randperm(self.turbo_steps, device=device)[:remainder]]
+                ])
+                indices = indices[torch.randperm(batch_size, device=device)]
+            else:
+                # 随机采样（batch_size 小时）
+                indices = torch.randint(0, self.turbo_steps, (batch_size,), device=device)
+            
+            # 2. 获取对应的 sigma 并添加抖动
+            # 抖动用于"增厚"流形，防止过拟合于精确的锚点
+            base_sigmas = self.anchor_sigmas.to(device=device, dtype=dtype)[indices]
+            jitter = torch.randn_like(base_sigmas) * jitter_scale
+            sampled_sigmas = (base_sigmas + jitter).clamp(0.001, 0.999)
+        else:
+            # ========== 标准模式：连续均匀采样 ==========
+            # 全时间步 [0, 1] 均匀采样，标准 Flow Matching / Rectified Flow
+            sampled_sigmas = torch.rand(batch_size, device=device, dtype=dtype)
+            
+            # 应用 Z-Image shift 变换
+            if self.shift > 0:
+                sampled_sigmas = (sampled_sigmas * self.shift) / (1 + (self.shift - 1) * sampled_sigmas)
+            
+            sampled_sigmas = sampled_sigmas.clamp(0.001, 0.999)
         
         # 3. 计算对应的 timestep
         # Z-Image: timestep = sigma * 1000
         sampled_timesteps = sampled_sigmas * self.num_train_timesteps
         
         # 4. 扩展维度以匹配 latents shape (B, C, H, W)
-        # 注意: Z-Image latents 是 (B, C, H, W)
         sigma_broadcast = sampled_sigmas.view(batch_size, 1, 1, 1)
         
         # 5. 线性插值构造 x_t
         # Z-Image: x_t = sigma * noise + (1 - sigma) * image
-        # 注意: 这里 image 是 latents (x_0), noise 是 x_1
         noisy_latents = sigma_broadcast * noise + (1 - sigma_broadcast) * latents
         
         # 6. 计算目标速度
         # RF ODE: dx/dt = v(x, t)
-        # 从 image(sigma=0) 到 noise(sigma=1)，速度 v = noise - image
         target_velocity = noise - latents
         
         return noisy_latents, sampled_timesteps, target_velocity
