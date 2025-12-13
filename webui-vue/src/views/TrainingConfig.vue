@@ -224,8 +224,8 @@
                     <el-icon class="help-icon"><QuestionFilled /></el-icon>
                   </el-tooltip>
                 </span>
-                <el-slider v-model="config.network.dim" :min="4" :max="128" :step="4" :show-tooltip="false" class="slider-flex" />
-                <el-input-number v-model="config.network.dim" :min="4" :max="128" :step="4" controls-position="right" class="input-fixed" />
+                <el-slider v-model="config.network.dim" :min="4" :max="512" :step="4" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.network.dim" :min="4" :max="512" :step="4" controls-position="right" class="input-fixed" />
               </div>
               <div class="control-row">
                 <span class="label">
@@ -234,8 +234,8 @@
                     <el-icon class="help-icon"><QuestionFilled /></el-icon>
                   </el-tooltip>
                 </span>
-                <el-slider v-model="config.network.alpha" :min="1" :max="64" :step="0.5" :show-tooltip="false" class="slider-flex" />
-                <el-input-number v-model="config.network.alpha" :min="1" :max="64" :step="0.5" controls-position="right" class="input-fixed" />
+                <el-slider v-model="config.network.alpha" :min="1" :max="512" :step="0.5" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.network.alpha" :min="1" :max="512" :step="0.5" controls-position="right" class="input-fixed" />
               </div>
               
               <!-- LoRA 高级选项 -->
