@@ -300,6 +300,52 @@ enable_bucket = true
 max_sequence_length = 512  # Text sequence length (must match cache)
 ```
 
+### 🎨 Loss Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **standard** | Basic MSE + optional FFT/Cosine | General training |
+| **frequency** | Frequency-aware (HF L1 + LF Cosine) | Sharpen details |
+| **style** | Style-structure (SSIM + Lab stats) | Learn lighting/color style |
+| **unified** | Frequency + Style combined | Full enhancement |
+
+> 💡 **Beginners**: Start with `standard` mode, try others if unsatisfied.
+
+#### 📐 Freq Sub-parameters
+
+| Parameter | Default | Function | Recommended |
+|-----------|---------|----------|-------------|
+| `alpha_hf` | 1.0 | High-freq (texture/edge) enhancement | 0.5 ~ 1.5 |
+| `beta_lf` | 0.2 | Low-freq (structure/lighting) lock | 0.1 ~ 0.5 |
+
+**Scenario Configs:**
+
+| Scenario | alpha_hf | beta_lf | Notes |
+|----------|----------|---------|-------|
+| **Sharpen Details** | 1.0~1.5 | 0.1 | Focus on textures |
+| **Keep Structure** | 0.5 | 0.3~0.5 | Prevent composition shift |
+| **⭐ Balanced** | 0.8 | 0.2 | Recommended default |
+
+#### 🎨 Style Sub-parameters
+
+| Parameter | Default | Function | Recommended |
+|-----------|---------|----------|-------------|
+| `lambda_struct` | 1.0 | SSIM structure lock (prevent face collapse) | 0.5 ~ 1.5 |
+| `lambda_light` | 0.5 | L-channel stats (learn lighting curves) | 0.3 ~ 1.0 |
+| `lambda_color` | 0.3 | ab-channel stats (learn color preference) | 0.1 ~ 0.5 |
+| `lambda_tex` | 0.5 | High-freq L1 (texture enhancement) | 0.3 ~ 0.8 |
+
+**Scenario Configs:**
+
+| Scenario | struct | light | color | tex | Notes |
+|----------|--------|-------|-------|-----|-------|
+| **Portrait** | 1.5 | 0.3 | 0.2 | 0.3 | Strong structure lock |
+| **Style Transfer** | 0.5 | 0.8 | 0.5 | 0.3 | Focus on lighting/color |
+| **Detail Enhancement** | 0.8 | 0.3 | 0.2 | 0.8 | Sharpen textures |
+| **⭐ Balanced** | 1.0 | 0.5 | 0.3 | 0.5 | Recommended default |
+
+> ⚠️ **Note**: When both Freq and Style are enabled, high-freq penalties overlap (`alpha_hf` and `lambda_tex`). Consider reducing one.
+
 ### Hardware Tiers
 
 | Tier | VRAM | GPU Examples | Auto Optimization |
