@@ -134,7 +134,7 @@ def process_image(
     save_file(sd, str(output_file))
 
 
-def worker_process(gpu_id: int, image_paths: List[Path], args, output_dir: Path, total_count: int, start_idx: int):
+def worker_process(gpu_id: int, image_paths: List[Path], args, output_dir: Path, total_count: int, shared_counter, counter_lock):
     """单个 GPU worker 进程"""
     import os
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
@@ -153,6 +153,12 @@ def worker_process(gpu_id: int, image_paths: List[Path], args, output_dir: Path,
         name = image_path.stem
         existing = list(output_dir.glob(f"{name}_*_{ARCHITECTURE}.safetensors"))
         if args.skip_existing and existing:
+            # 跳过但仍更新计数
+            with counter_lock:
+                shared_counter.value += 1
+                current = shared_counter.value
+            if current % 10 == 0 or current == total_count:
+                print(f"Progress: {current}/{total_count}", flush=True)
             continue
         
         try:
@@ -161,10 +167,14 @@ def worker_process(gpu_id: int, image_paths: List[Path], args, output_dir: Path,
         except Exception as e:
             print(f"[GPU {gpu_id}] Error: {image_path.name}: {e}", flush=True)
         
-        # 每处理 10 张或最后一张输出进度
-        if (i + 1) % 10 == 0 or i == len(image_paths) - 1:
-            global_idx = start_idx + i + 1
-            print(f"Progress: {global_idx}/{total_count}", flush=True)
+        # 更新共享计数器并输出进度
+        with counter_lock:
+            shared_counter.value += 1
+            current = shared_counter.value
+        
+        # 每 10 张或最后一张输出进度
+        if current % 10 == 0 or current == total_count:
+            print(f"Progress: {current}/{total_count}", flush=True)
     
     # 清理
     del vae
@@ -258,11 +268,16 @@ def main():
             start = i * chunk_size
             end = min(start + chunk_size, total)
             if start < total:
-                chunks.append((i, images[start:end], start))
+                chunks.append((i, images[start:end]))
         
         print(f"Distributing {total} images across {len(chunks)} GPUs", flush=True)
-        for gpu_id, chunk, start_idx in chunks:
-            print(f"  GPU {gpu_id}: {len(chunk)} images (index {start_idx}-{start_idx + len(chunk) - 1})", flush=True)
+        for gpu_id, chunk in chunks:
+            print(f"  GPU {gpu_id}: {len(chunk)} images", flush=True)
+        
+        # 创建共享计数器和锁
+        manager = mp.Manager()
+        shared_counter = manager.Value('i', 0)
+        counter_lock = manager.Lock()
         
         # 启动进程池
         mp.set_start_method('spawn', force=True)
@@ -270,8 +285,8 @@ def main():
         total_processed = 0
         with ProcessPoolExecutor(max_workers=num_gpus) as executor:
             futures = {
-                executor.submit(worker_process, gpu_id, chunk, args, output_dir, total, start_idx): gpu_id
-                for gpu_id, chunk, start_idx in chunks
+                executor.submit(worker_process, gpu_id, chunk, args, output_dir, total, shared_counter, counter_lock): gpu_id
+                for gpu_id, chunk in chunks
             }
             
             for future in as_completed(futures):
