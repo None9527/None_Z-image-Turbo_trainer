@@ -4,9 +4,14 @@ import subprocess
 import sys
 import os
 import threading
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from core.config import PROJECT_ROOT, get_model_path
 from core import state
+
+# 线程池用于文件 I/O 操作
+_file_executor = ThreadPoolExecutor(max_workers=2)
 
 router = APIRouter(prefix="/api/cache", tags=["cache"])
 
@@ -284,59 +289,61 @@ class CacheCheckRequest(BaseModel):
 
 @router.post("/check")
 async def check_cache_status(request: CacheCheckRequest):
-    """检查数据集的缓存完整性"""
+    """检查数据集的缓存完整性（异步，防止前端卡死）"""
     dataset_path = Path(request.datasetPath)
     if not dataset_path.exists():
         raise HTTPException(status_code=404, detail="Dataset path not found")
-    
-    # 查找所有图片
-    image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
-    images = []
-    for f in dataset_path.rglob("*"):
-        if f.is_file() and f.suffix.lower() in image_extensions:
-            images.append(f)
-    
-    total_images = len(images)
-    latent_cached = 0
-    text_cached = 0
     
     # 获取模型对应的缓存后缀
     from .training import get_cache_suffixes
     latent_pattern, text_suffix = get_cache_suffixes(request.modelType)
     
-    # 检查每个图片的缓存
-    for img in images:
-        stem = img.stem
-        parent = img.parent
+    def _do_check():
+        """同步检查函数，在线程中执行"""
+        image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.bmp'}
+        images = []
+        for f in dataset_path.rglob("*"):
+            if f.is_file() and f.suffix.lower() in image_extensions:
+                images.append(f)
         
-        # 检查 latent 缓存 (使用动态模式)
-        latent_files = list(parent.glob(f"{stem}{latent_pattern}"))
-        if latent_files:
-            latent_cached += 1
+        total_images = len(images)
+        latent_cached = 0
+        text_cached = 0
         
-        # 检查 text 缓存 (使用动态后缀)
-        text_files = list(parent.glob(f"{stem}{text_suffix}"))
-        if text_files:
-            text_cached += 1
+        for img in images:
+            stem = img.stem
+            parent = img.parent
+            
+            # 检查 latent 缓存
+            latent_files = list(parent.glob(f"{stem}{latent_pattern}"))
+            if latent_files:
+                latent_cached += 1
+            
+            # 检查 text 缓存
+            text_files = list(parent.glob(f"{stem}{text_suffix}"))
+            if text_files:
+                text_cached += 1
+        
+        return {
+            "total_images": total_images,
+            "latent_cached": latent_cached,
+            "text_cached": text_cached,
+            "latent_complete": latent_cached >= total_images,
+            "text_complete": text_cached >= total_images,
+            "all_complete": latent_cached >= total_images and text_cached >= total_images
+        }
     
-    return {
-        "total_images": total_images,
-        "latent_cached": latent_cached,
-        "text_cached": text_cached,
-        "latent_complete": latent_cached >= total_images,
-        "text_complete": text_cached >= total_images,
-        "all_complete": latent_cached >= total_images and text_cached >= total_images
-    }
+    # 在线程池中执行，避免阻塞事件循环
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(_file_executor, _do_check)
+    return result
 
 @router.post("/clear")
 async def clear_cache(request: CacheClearRequest):
-    """Clear latent and/or text encoder cache for a dataset"""
+    """Clear latent and/or text encoder cache for a dataset（异步，防止前端卡死）"""
     dataset_path = Path(request.datasetPath)
     if not dataset_path.exists():
         raise HTTPException(status_code=404, detail="Dataset path not found")
-    
-    deleted_count = 0
-    errors = []
     
     # 获取模型对应的缓存后缀用于删除
     from .training import get_cache_suffixes
@@ -345,24 +352,31 @@ async def clear_cache(request: CacheClearRequest):
     # Define patterns to delete
     patterns = []
     if request.clearLatent:
-        # latent_pattern 是 glob 模式如 "_*_zi.safetensors"
         patterns.append(f"*{latent_pattern}")
     if request.clearText:
-        # text_suffix 是后缀如 "_zi_te.safetensors"
         patterns.append(f"*{text_suffix}")
     
     if not patterns:
         return {"success": True, "deleted": 0, "message": "No cache type selected"}
     
-    try:
+    def _do_clear():
+        """同步删除函数，在线程中执行"""
+        deleted_count = 0
+        errors = []
+        
         for pattern in patterns:
-            # Recursive search
             for file in dataset_path.rglob(pattern):
                 try:
                     file.unlink()
                     deleted_count += 1
                 except Exception as e:
                     errors.append(f"{file.name}: {str(e)}")
+        
+        return deleted_count, errors
+    
+    try:
+        loop = asyncio.get_event_loop()
+        deleted_count, errors = await loop.run_in_executor(_file_executor, _do_clear)
         
         state.add_log(f"Cleared {deleted_count} cache files", "info")
         
