@@ -291,10 +291,35 @@ def main():
     logger.info("\n" + "=" * 60)
     logger.info("🚀 Z-Image AC-RF Training")
     logger.info("=" * 60)
-    logger.info(f"📁 Output: {args.output_dir}/{args.output_name}")
-    logger.info(f"🎯 Mode: {'Turbo (' + str(args.turbo_steps) + ' steps)' if args.enable_turbo else 'Standard Flow Matching'}")
-    logger.info(f"🧠 LoRA: rank={args.network_dim}, alpha={args.network_alpha}")
-    logger.info(f"⚡ Precision: {weight_dtype}")
+    
+    # 基本信息
+    logger.info(f"📁 输出: {args.output_dir}/{args.output_name}")
+    logger.info(f"🎯 模式: {'Turbo (' + str(args.turbo_steps) + ' steps)' if args.enable_turbo else '标准 Flow Matching'}")
+    logger.info(f"⚡ 精度: {weight_dtype}")
+    
+    # 训练参数
+    logger.info(f"\n📋 训练参数:")
+    logger.info(f"   Epochs: {args.num_train_epochs} | LR: {args.learning_rate} | Grad Accum: {args.gradient_accumulation_steps}")
+    logger.info(f"   LoRA: rank={args.network_dim}, alpha={args.network_alpha}")
+    logger.info(f"   Optimizer: {args.optimizer_type} | Scheduler: {args.lr_scheduler}")
+    
+    # AC-RF 参数
+    logger.info(f"\n⚙️ AC-RF 参数:")
+    logger.info(f"   Shift: {args.shift} | Jitter: {args.jitter_scale} | Latent Jitter: {args.latent_jitter_scale}")
+    logger.info(f"   SNR Gamma: {args.snr_gamma} | SNR Floor: {args.snr_floor}")
+    if args.raft_mode:
+        logger.info(f"   RAFT: ON (L2 ratio={args.free_stream_ratio})")
+    
+    # Loss 配置
+    loss_cfg = f"L1×{args.lambda_l1} + Cos×{args.lambda_cosine}"
+    if args.enable_freq:
+        loss_cfg += f" + Freq×{args.lambda_freq}(hf={args.alpha_hf},lf={args.beta_lf})"
+    if args.enable_style:
+        loss_cfg += f" + Style×{args.lambda_style}"
+    logger.info(f"\n📊 Loss 配置:")
+    logger.info(f"   {loss_cfg}")
+    if getattr(args, 'enable_timestep_aware_loss', False):
+        logger.info(f"   🎛 时间步感知: ON (早期重结构, 后期重纹理)")
     
     logger.info("\n[1/7] 加载 Transformer...")
     
@@ -413,10 +438,7 @@ def main():
     # =========================================================================
     # 5. Loss Functions
     # =========================================================================
-    logger.info("\n[4/7] 配置 Loss 函数...")
-    
-    # 基础 Loss
-    loss_info = f"L1×{args.lambda_l1} + Cos×{args.lambda_cosine}"
+    logger.info("\n[4/7] 初始化 Loss 函数...")
     
     freq_loss_fn = None
     if args.enable_freq:
@@ -424,7 +446,6 @@ def main():
             alpha_hf=args.alpha_hf,
             beta_lf=args.beta_lf,
         )
-        loss_info += f" + Freq×{args.lambda_freq}"
     
     style_loss_fn = None
     if args.enable_style:
@@ -434,22 +455,14 @@ def main():
             lambda_color=args.lambda_color,
             lambda_tex=args.lambda_tex,
         )
-        loss_info += f" + Style×{args.lambda_style}"
     
     # RAFT L2 混合模式
     if isinstance(args.raft_mode, str):
         args.raft_mode = args.raft_mode.lower() in ('true', '1', 'yes')
     args.raft_mode = bool(args.raft_mode)
     
-    if args.raft_mode:
-        loss_info += f" + L2×{args.free_stream_ratio}"
-    
-    logger.info(f"  📊 Loss 组合: {loss_info}")
-    
     # 时间步感知 Loss 权重调度器
     timestep_aware_scheduler = create_timestep_aware_scheduler_from_args(args)
-    if timestep_aware_scheduler:
-        logger.info(f"  🎛 时间步感知: ON (早期重结构, 后期重纹理)")
     
     # =========================================================================
     # 6. DataLoader
