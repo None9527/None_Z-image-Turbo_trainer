@@ -559,6 +559,10 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         f"l2_anchor_ratio = {config.get('acrf', {}).get('l2_anchor_ratio', 0.3)}",
         # Latent Jitter (构图突破)
         f"latent_jitter_scale = {config.get('acrf', {}).get('latent_jitter_scale', 0.0)}",
+        # 时间步感知 Loss 权重
+        f"enable_timestep_aware_loss = {'true' if config.get('acrf', {}).get('enable_timestep_aware_loss', False) else 'false'}",
+        f"timestep_high_threshold = {config.get('acrf', {}).get('timestep_high_threshold', 0.7)}",
+        f"timestep_low_threshold = {config.get('acrf', {}).get('timestep_low_threshold', 0.3)}",
         "",
     ]
     

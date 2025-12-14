@@ -837,7 +837,26 @@
               </div>
             </template>
 
-
+            <!-- 时间步感知 Loss (REPA) -->
+            <div class="subsection-label">时间步感知 (REPA)</div>
+            <div class="control-row">
+              <span class="label">
+                启用时间步感知
+                <el-tooltip content="自动根据去噪阶段调整 Freq/Style 权重，早期重结构，后期重纹理" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-switch v-model="config.acrf.enable_timestep_aware_loss" />
+            </div>
+            <el-alert 
+              v-if="config.acrf.enable_timestep_aware_loss && (!config.training.enable_freq && !config.training.enable_style)" 
+              type="warning" 
+              :closable="false" 
+              show-icon
+              style="margin-top: 8px"
+            >
+              建议同时启用频域感知或风格结构，时间步感知才能发挥作用
+            </el-alert>
 
             <div class="subsection-label">其他高级参数</div>
             <div class="control-row">
@@ -981,7 +1000,11 @@ function getDefaultConfig() {
       l2_include_anchor: false,
       l2_anchor_ratio: 0.3,
       // Latent Jitter (构图突破)
-      latent_jitter_scale: 0.0
+      latent_jitter_scale: 0.0,
+      // 时间步感知 Loss 权重
+      enable_timestep_aware_loss: false,
+      timestep_high_threshold: 0.7,
+      timestep_low_threshold: 0.3
     },
     network: {
       dim: 8,
