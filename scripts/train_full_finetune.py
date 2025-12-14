@@ -344,14 +344,8 @@ def main():
         args.freeze_embeddings
     )
     
-    # 将可训练参数转换为 float32 以确保梯度计算正确
-    # 模型其余部分保持 bf16 用于推理
-    for param in trainable_params:
-        param.data = param.data.float()
-    
     total_params = frozen_count + trainable_count
     logger.info(f"  ✓ 可训练: {trainable_count:,} ({trainable_count/1e6:.2f}M, {100*trainable_count/total_params:.1f}%)")
-    logger.info(f"  ✓ 可训练参数已转换为 float32")
     
     # Enable gradient checkpointing
     if args.gradient_checkpointing and hasattr(transformer, 'enable_gradient_checkpointing'):
