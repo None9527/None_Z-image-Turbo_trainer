@@ -132,12 +132,36 @@ async def scan_dataset(request: DatasetScanRequest):
         # 按文件名排序
         images.sort(key=lambda x: x["filename"].lower())
     
+    # 第四步：快速统计全局缓存数量（不读取图片内容，只检查文件是否存在）
+    total_latent_cached = 0
+    total_text_cached = 0
+    
+    for file in all_files:
+        # 快速检查 latent 缓存
+        has_latent = any(
+            list(file.parent.glob(f"{file.stem}_*{suffix}"))[:1]
+            for suffix in ["_zi.safetensors", "_lc.safetensors"]
+        )
+        if has_latent:
+            total_latent_cached += 1
+        
+        # 快速检查 text 缓存
+        has_text = any(
+            (file.parent / f"{file.stem}{suffix}").exists()
+            for suffix in ALL_TEXT_SUFFIXES
+        )
+        if has_text:
+            total_text_cached += 1
+    
     return {
         "path": str(path),
         "name": path.name,
         "imageCount": total_count,
         "totalSize": page_size_total,  # 当前页大小
         "images": images,
+        # 全局缓存统计
+        "totalLatentCached": total_latent_cached,
+        "totalTextCached": total_text_cached,
         # 分页信息
         "pagination": {
             "page": page,

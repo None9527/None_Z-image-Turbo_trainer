@@ -30,6 +30,9 @@ export interface DatasetInfo {
   totalSize: number
   images: DatasetImage[]
   pagination?: Pagination
+  // 全局缓存统计
+  totalLatentCached?: number
+  totalTextCached?: number
 }
 
 export const useDatasetStore = defineStore('dataset', () => {
@@ -37,7 +40,7 @@ export const useDatasetStore = defineStore('dataset', () => {
   const currentDataset = ref<DatasetInfo | null>(null)
   const isLoading = ref(false)
   const selectedImages = ref<Set<string>>(new Set())
-  
+
   // 分页状态
   const currentPage = ref(1)
   const pageSize = ref(100)
@@ -48,20 +51,20 @@ export const useDatasetStore = defineStore('dataset', () => {
   async function scanDataset(path: string, page: number = 1, size: number = 100) {
     isLoading.value = true
     try {
-      const response = await axios.post('/api/dataset/scan', { 
+      const response = await axios.post('/api/dataset/scan', {
         path,
         page,
         page_size: size
       })
       const datasetInfo: DatasetInfo = response.data
-      
+
       // 保存分页信息
       if (response.data.pagination) {
         pagination.value = response.data.pagination
         currentPage.value = response.data.pagination.page
         pageSize.value = response.data.pagination.pageSize
       }
-      
+
       // 添加或更新数据集列表
       const existingIndex = datasets.value.findIndex(d => d.path === path)
       if (existingIndex >= 0) {
@@ -69,7 +72,7 @@ export const useDatasetStore = defineStore('dataset', () => {
       } else {
         datasets.value.push(datasetInfo)
       }
-      
+
       currentDataset.value = datasetInfo
       return datasetInfo
     } catch (error) {
@@ -108,7 +111,7 @@ export const useDatasetStore = defineStore('dataset', () => {
   async function saveCaption(imagePath: string, caption: string) {
     try {
       await axios.post('/api/dataset/caption', { path: imagePath, caption })
-      
+
       // 更新本地状态
       if (currentDataset.value) {
         const image = currentDataset.value.images.find(img => img.path === imagePath)
@@ -126,7 +129,7 @@ export const useDatasetStore = defineStore('dataset', () => {
   async function generateCaptions(modelType: 'qwen' | 'blip' = 'qwen') {
     try {
       if (!currentDataset.value) return
-      
+
       const response = await axios.post('/api/dataset/generate-captions', {
         datasetPath: currentDataset.value.path,
         modelType

@@ -827,12 +827,15 @@ const localDatasets = ref<LocalDataset[]>([])
 const datasetsDir = ref('')
 const datasetPath = ref('')
 
+// 缓存计数（使用后端返回的全局统计，而不是当前页数据）
 const latentCachedCount = computed(() => {
-  return datasetStore.currentImages.filter(img => img.hasLatentCache).length
+  return datasetStore.currentDataset?.totalLatentCached ?? 
+         datasetStore.currentImages.filter(img => img.hasLatentCache).length
 })
 
 const textCachedCount = computed(() => {
-  return datasetStore.currentImages.filter(img => img.hasTextCache).length
+  return datasetStore.currentDataset?.totalTextCached ?? 
+         datasetStore.currentImages.filter(img => img.hasTextCache).length
 })
 
 // 分页状态（从 store 获取）
