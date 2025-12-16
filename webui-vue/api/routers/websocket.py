@@ -40,12 +40,14 @@ class ConnectionManager:
     def disconnect(self, websocket: WebSocket):
         self.active_connections.discard(websocket)
         print(f"[WebSocket] Client disconnected. Total clients: {len(self.active_connections)}")
-        
-        # 如果没有连接了，停止广播
-        if not self.active_connections and self._running:
-            self._running = False
-            if self._broadcast_task:
-                self._broadcast_task.cancel()
+
+        # fix: 防止 WebSocket 断开时训练进程管道阻塞导致训练暂停
+        # 即使没有 WebSocket 连接，也必须持续读取训练进程输出
+        # 注释掉原有的停止逻辑
+        #if not self.active_connections and self._running:
+        #    self._running = False
+        #    if self._broadcast_task:
+        #        self._broadcast_task.cancel()
     
     async def broadcast(self, message: Dict[str, Any]):
         """向所有连接广播消息"""
