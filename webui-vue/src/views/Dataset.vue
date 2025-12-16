@@ -846,12 +846,12 @@ const pageSize = computed(() => datasetStore.pageSize)
 const pagination = computed(() => datasetStore.pagination)
 
 // 监听数据集变化，异步获取缓存统计
+// 现在使用快速 glob 扫描，不会卡死
 import { watch } from 'vue'
 watch(
   () => datasetStore.currentDataset?.path,
   (newPath) => {
     if (newPath) {
-      // 数据集加载完成后，异步获取缓存统计（不阻塞首次加载）
       datasetStore.fetchStats(newPath)
     }
   },
