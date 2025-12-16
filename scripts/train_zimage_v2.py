@@ -260,6 +260,7 @@ def parse_args():
         args.weight_decay = training_cfg.get("weight_decay", args.weight_decay)
         
         # Scheduler
+        args.lr_scheduler = training_cfg.get("lr_scheduler", args.lr_scheduler)
         args.lr_warmup_steps = training_cfg.get("lr_warmup_steps", args.lr_warmup_steps)
         args.lr_num_cycles = training_cfg.get("lr_num_cycles", args.lr_num_cycles)
         

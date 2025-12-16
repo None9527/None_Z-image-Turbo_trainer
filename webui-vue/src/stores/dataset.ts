@@ -73,6 +73,12 @@ export const useDatasetStore = defineStore('dataset', () => {
         datasets.value.push(datasetInfo)
       }
 
+      // 翻页时保留之前的缓存统计（避免被重置为 null）
+      if (currentDataset.value && currentDataset.value.path === path) {
+        datasetInfo.totalLatentCached = datasetInfo.totalLatentCached ?? currentDataset.value.totalLatentCached
+        datasetInfo.totalTextCached = datasetInfo.totalTextCached ?? currentDataset.value.totalTextCached
+      }
+
       currentDataset.value = datasetInfo
       return datasetInfo
     } catch (error) {
