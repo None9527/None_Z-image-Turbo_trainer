@@ -171,6 +171,7 @@ def generate_image(
     guidance_scale: float,
     seed: int,
     blend_ratio: float,
+    shift: float = 3.0,
 ):
     """生成图像"""
     global _pipeline, _current_blend_ratio
@@ -191,8 +192,13 @@ def generate_image(
         generator = torch.Generator(device=device).manual_seed(seed)
         actual_seed = seed
     
-    print(f"[INFO] Generating: {width}x{height}, steps={steps}, cfg={guidance_scale}, seed={actual_seed}")
+    print(f"[INFO] Generating: {width}x{height}, steps={steps}, cfg={guidance_scale}, seed={actual_seed}, shift={shift}")
     print(f"[INFO] Prompt: {prompt[:100]}...")
+    
+    # 应用 shift 参数到 scheduler
+    if shift > 0:
+        _pipeline.scheduler.config["base_shift"] = shift
+        _pipeline.scheduler.config["max_shift"] = shift
     
     try:
         image = _pipeline(
@@ -242,7 +248,7 @@ def scan_finetune_models(directory: str):
 # ============================================================
 
 def create_ui():
-    with gr.Blocks(title="Z-Image Finetune Inference", theme=gr.themes.Default()) as demo:
+    with gr.Blocks(title="Z-Image Finetune Inference") as demo:
         gr.Markdown("# 🎨 Z-Image Finetune 推理工具")
         gr.Markdown("支持加载 Full Finetune 训练的模型权重，可实时调节基础模型与微调模型的混合比例。")
         
@@ -332,6 +338,9 @@ def create_ui():
                     cfg_input = gr.Slider(0.0, 15.0, 1.0, step=0.1, label="CFG Scale")
                     seed_input = gr.Number(label="Seed (-1=随机)", value=-1)
                 
+                with gr.Row():
+                    shift_input = gr.Slider(0.0, 10.0, 3.0, step=0.1, label="Shift", info="Turbo 模型通常使用 3.0")
+                
                 generate_btn = gr.Button("🎨 生成图像", variant="primary", size="lg")
                 
                 output_image = gr.Image(label="生成结果", type="pil")
@@ -362,8 +371,8 @@ def create_ui():
         def on_blend(ratio):
             return blend_weights(ratio)
         
-        def on_generate(prompt, neg_prompt, width, height, steps, cfg, seed, blend):
-            img, msg = generate_image(prompt, neg_prompt, int(width), int(height), int(steps), cfg, int(seed), blend)
+        def on_generate(prompt, neg_prompt, width, height, steps, cfg, seed, blend, shift):
+            img, msg = generate_image(prompt, neg_prompt, int(width), int(height), int(steps), cfg, int(seed), blend, shift)
             return img, msg
         
         load_base_btn.click(
@@ -401,6 +410,7 @@ def create_ui():
                 cfg_input,
                 seed_input,
                 blend_slider,
+                shift_input,
             ],
             outputs=[output_image, gen_status],
         )
@@ -414,5 +424,5 @@ if __name__ == "__main__":
         server_name="0.0.0.0",
         server_port=3199,
         share=False,
-        inbrowser=True,
+        inbrowser=False,
     )
