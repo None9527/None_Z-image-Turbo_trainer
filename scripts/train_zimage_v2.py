@@ -874,7 +874,8 @@ def main():
                     freq = loss_components.get('freq', 0)
                     style = loss_components.get('style', 0)
                     l2 = loss_components.get('L2', 0)
-                    print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} l1={l1:.4f} cos={cosine:.4f} freq={freq:.4f} style={style:.4f} L2={l2:.4f} lr={current_lr:.2e}", flush=True)
+                    curv = loss_components.get('curvature', 0)
+                    print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={current_loss:.4f} ema={ema_loss:.4f} l1={l1:.4f} cos={cosine:.4f} freq={freq:.4f} style={style:.4f} L2={l2:.4f} curv={curv:.4f} lr={current_lr:.2e}", flush=True)
                 
                 # ========== 正则训练步骤 (按比例执行) ==========
                 # 正则化步骤在主训练步骤完成后独立执行，不参与梯度累积周期
