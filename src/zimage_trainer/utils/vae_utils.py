@@ -66,9 +66,9 @@ def load_vae(
 
 def decode_latents_to_pixels(
     vae,
-    latents: torch.Tensor,
+    latents,  # torch.Tensor
     is_scaled_latents: bool = True,
-) -> torch.Tensor:
+):
     """
     Decode latents to pixel space using VAE.
     
@@ -132,9 +132,9 @@ def decode_latents_to_pixels(
 
 def encode_pixels_to_latents(
     vae,
-    pixels: torch.Tensor,
+    pixels,  # torch.Tensor
     use_scaled: bool = True,
-) -> torch.Tensor:
+):
     """
     Encode pixels to latent space.
     
@@ -165,10 +165,10 @@ def encode_pixels_to_latents(
 
 
 def convert_latents_prototype_to_pipeline(
-    latents: torch.Tensor,
+    latents,  # torch.Tensor
     scaling_factor: float = SCALING_FACTOR,
     shift_factor: float = SHIFT_FACTOR,
-) -> torch.Tensor:
+):
     """
     Convert Prototype latents to Pipeline format.
     
@@ -186,10 +186,10 @@ def convert_latents_prototype_to_pipeline(
 
 
 def convert_latents_pipeline_to_prototype(
-    latents: torch.Tensor,
+    latents,  # torch.Tensor
     scaling_factor: float = SCALING_FACTOR,
     shift_factor: float = SHIFT_FACTOR,
-) -> torch.Tensor:
+):
     """
     Convert Pipeline latents to Prototype format.
     
