@@ -110,6 +110,15 @@
             <el-icon><Folder /></el-icon>
             <span>{{ formatSize(datasetStore.currentDataset.totalSize) }}</span>
           </div>
+          <el-button 
+            type="primary" 
+            link 
+            @click="forceRefreshStats" 
+            :loading="datasetStore.isLoadingStats"
+            title="刷新统计"
+          >
+            <el-icon><Refresh /></el-icon>
+          </el-button>
           <div class="stat" :class="{ 'stat-success': latentCachedCount === datasetStore.currentDataset.imageCount }">
             <el-icon><Box /></el-icon>
             <span v-if="datasetStore.isLoadingStats">Latent: <el-icon class="is-loading"><Loading /></el-icon></span>
@@ -1443,14 +1452,16 @@ watch(
     
     // Latent 缓存完成时刷新
     if (oldStatus?.latent?.status === 'running' && newStatus?.latent?.status === 'completed') {
-      console.log('[Dataset] Latent cache completed, refreshing dataset...')
-      await datasetStore.scanDataset(currentView.value.path)
+      console.log('[Dataset] Latent cache completed, refreshing stats...')
+      await datasetStore.fetchStats(currentView.value.path)
+      await datasetStore.loadPage(datasetStore.currentPage) // 刷新当前页图片状态
     }
     
     // Text 缓存完成时刷新
     if (oldStatus?.text?.status === 'running' && newStatus?.text?.status === 'completed') {
-      console.log('[Dataset] Text cache completed, refreshing dataset...')
-      await datasetStore.scanDataset(currentView.value.path)
+      console.log('[Dataset] Text cache completed, refreshing stats...')
+      await datasetStore.fetchStats(currentView.value.path)
+      await datasetStore.loadPage(datasetStore.currentPage)
       isGeneratingCache.value = false
     }
     
@@ -1458,11 +1469,21 @@ watch(
     if (newStatus?.latent?.status !== 'running' && newStatus?.text?.status !== 'running') {
       if (isGeneratingCache.value) {
         isGeneratingCache.value = false
+        // 确保最后再通过一次状态
+        datasetStore.fetchStats(currentView.value.path)
       }
     }
   },
   { deep: true }
 )
+
+// 手动刷新统计
+async function forceRefreshStats() {
+  if (currentView.value) {
+    await datasetStore.fetchStats(currentView.value.path)
+    ElMessage.success('统计已更新')
+  }
+}
 
 // 检查并恢复 Ollama 标注状态
 async function checkOllamaTaggingStatus() {
