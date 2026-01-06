@@ -8,7 +8,8 @@ Mirrors the functionality from musubi-tuner/zimage/zimage_utils.py.
 import logging
 from typing import Optional, Union
 
-import torch
+# 延迟导入 torch（避免多卡模式下的 CUDA 初始化冲突）
+# 实际导入在各函数内部进行
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +21,8 @@ SHIFT_FACTOR = 0.1159
 
 def load_vae(
     vae_path: str,
-    device: Union[str, torch.device] = "cuda",
-    dtype: torch.dtype = torch.bfloat16,
+    device = "cuda",
+    dtype = None,
 ):
     """
     Load Z-Image VAE.
@@ -36,8 +37,12 @@ def load_vae(
     Returns:
         Loaded VAE model
     """
+    import torch
     from diffusers import AutoencoderKL
     import os
+    
+    if dtype is None:
+        dtype = torch.bfloat16
     
     logger.info(f"Loading VAE from {vae_path}")
     
@@ -87,6 +92,8 @@ def decode_latents_to_pixels(
         >>> pixels.shape
         torch.Size([1, 3, 1024, 1024])
     """
+    import torch
+    
     # Handle 5D latents by squeezing to 4D
     if latents.dim() == 5:
         # Could be (B, C, F, H, W) or (B, F, C, H, W)
@@ -139,6 +146,8 @@ def encode_pixels_to_latents(
     Returns:
         Latent tensor (B, C, H//8, W//8)
     """
+    import torch
+    
     # Normalize to [-1, 1]
     pixels = pixels * 2.0 - 1.0
     pixels = pixels.to(vae.device, dtype=vae.dtype)
