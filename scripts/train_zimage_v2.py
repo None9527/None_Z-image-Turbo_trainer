@@ -552,6 +552,7 @@ def main():
     l2_scheduler = create_l2_scheduler_from_args(args)
     
     global_step = 0
+    micro_step = 0  # 实际 batch 计数器（用于曲率惩罚间隔）
     ema_loss = None
     ema_decay = 0.99
     
@@ -771,10 +772,13 @@ def main():
                 # === Curvature Penalty (曲率惩罚) ===
                 # 鼓励相邻锚点间做匀速直线运动，减少跳跃误差
                 curvature_loss_val = 0.0
+                # 更新 micro-step 计数器（每个实际 batch +1）
+                micro_step += 1
+                
                 if (getattr(args, 'enable_curvature', False) and 
                     args.lambda_curvature > 0 and
                     epoch >= getattr(args, 'curvature_start_epoch', 0) and
-                    global_step % getattr(args, 'curvature_interval', 10) == 0):
+                    micro_step % getattr(args, 'curvature_interval', 10) == 0):
                     
                     # 获取当前锚点索引和 sigma
                     anchor_sigmas = acrf_trainer.sigmas  # 实际锚点 sigma 值
