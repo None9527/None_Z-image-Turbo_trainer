@@ -15,7 +15,8 @@
           <img :src="`/api/dataset/image?path=${encodeURIComponent(image.path)}`" :alt="image.filename" />
         </div>
         <div class="image-meta-info">
-          <span>{{ image.width }} x {{ image.height }}</span>
+          <span v-if="image.width && image.height">{{ image.width }} x {{ image.height }}</span>
+          <span v-else>尺寸未知</span>
           <span>{{ formatSize(image.size) }}</span>
           <span>{{ image.filename }}</span>
         </div>

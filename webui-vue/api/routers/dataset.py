@@ -76,7 +76,8 @@ def _get_image_dimensions(file: Path, dim_cache: dict) -> tuple[int, int]:
             w, h = img.size
             dim_cache[filename] = [w, h, mtime]
             return w, h
-    except:
+    except Exception as e:
+        print(f"[Dataset] Failed to get dimensions for {filename}: {e}")
         return 0, 0
 
 def _get_cached_files_and_size(path: Path) -> tuple[list, int]:
@@ -255,25 +256,32 @@ async def get_dataset_stats(request: DatasetScanRequest):
         latent_zi_files = set()
         latent_lc_files = set()
         
-        # Z-Image latent 缓存: xxx_0512x0512_zi.safetensors
+        # Z-Image latent 缓存: xxx_0512x0512_zi.safetensors 或 xxx_zi.safetensors
         for f in path.rglob("*_zi.safetensors"):
-            # 提取原始图片名（去掉 _尺寸_zi.safetensors）
+            # 提取原始图片名
             stem = f.stem  # xxx_0512x0512_zi
-            parts = stem.rsplit('_', 2)  # ['xxx', '0512x0512', 'zi']
+            parts = stem.rsplit('_', 2)
             if len(parts) >= 3:
+                # 标准格式: name_RES_suffix
                 original_name = parts[0]
                 latent_zi_files.add(original_name)
+            elif len(parts) == 2:
+                # 兼容格式: name_suffix
+                latent_zi_files.add(parts[0])
         
-        # LongCat latent 缓存: xxx_0512x0512_lc.safetensors
+        # LongCat latent 缓存
         for f in path.rglob("*_lc.safetensors"):
             stem = f.stem
             parts = stem.rsplit('_', 2)
             if len(parts) >= 3:
                 original_name = parts[0]
                 latent_lc_files.add(original_name)
+            elif len(parts) == 2:
+                latent_lc_files.add(parts[0])
         
         # latent 缓存数 = ZI 或 LC 缓存存在的图片数
         latent_cached_names = latent_zi_files | latent_lc_files
+        print(f"[Stats] Latent cached: {len(latent_cached_names)} (ZI: {len(latent_zi_files)}, LC: {len(latent_lc_files)})")
         
         # 直接 glob 扫描 text 缓存文件数量
         text_zi_files = set()
@@ -293,6 +301,7 @@ async def get_dataset_stats(request: DatasetScanRequest):
                 text_lc_files.add(original_name)
         
         text_cached_names = text_zi_files | text_lc_files
+        print(f"[Stats] Text cached: {len(text_cached_names)} (ZI: {len(text_zi_files)}, LC: {len(text_lc_files)})")
         
         return {
             "totalCount": total_count,
