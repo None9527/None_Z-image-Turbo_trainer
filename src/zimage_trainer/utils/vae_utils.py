@@ -6,10 +6,11 @@ Mirrors the functionality from musubi-tuner/zimage/zimage_utils.py.
 """
 
 import logging
+import os
 from typing import Optional, Union
 
-# 延迟导入 torch（避免多卡模式下的 CUDA 初始化冲突）
-# 实际导入在各函数内部进行
+import torch
+from diffusers import AutoencoderKL
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +38,6 @@ def load_vae(
     Returns:
         Loaded VAE model
     """
-    import torch
-    from diffusers import AutoencoderKL
-    import os
-    
     if dtype is None:
         dtype = torch.bfloat16
     
@@ -66,9 +63,9 @@ def load_vae(
 
 def decode_latents_to_pixels(
     vae,
-    latents,  # torch.Tensor
+    latents: torch.Tensor,
     is_scaled_latents: bool = True,
-):
+) -> torch.Tensor:
     """
     Decode latents to pixel space using VAE.
     
@@ -92,8 +89,6 @@ def decode_latents_to_pixels(
         >>> pixels.shape
         torch.Size([1, 3, 1024, 1024])
     """
-    import torch
-    
     # Handle 5D latents by squeezing to 4D
     if latents.dim() == 5:
         # Could be (B, C, F, H, W) or (B, F, C, H, W)
@@ -132,9 +127,9 @@ def decode_latents_to_pixels(
 
 def encode_pixels_to_latents(
     vae,
-    pixels,  # torch.Tensor
+    pixels: torch.Tensor,
     use_scaled: bool = True,
-):
+) -> torch.Tensor:
     """
     Encode pixels to latent space.
     
@@ -146,8 +141,6 @@ def encode_pixels_to_latents(
     Returns:
         Latent tensor (B, C, H//8, W//8)
     """
-    import torch
-    
     # Normalize to [-1, 1]
     pixels = pixels * 2.0 - 1.0
     pixels = pixels.to(vae.device, dtype=vae.dtype)
@@ -165,10 +158,10 @@ def encode_pixels_to_latents(
 
 
 def convert_latents_prototype_to_pipeline(
-    latents,  # torch.Tensor
+    latents: torch.Tensor,
     scaling_factor: float = SCALING_FACTOR,
     shift_factor: float = SHIFT_FACTOR,
-):
+) -> torch.Tensor:
     """
     Convert Prototype latents to Pipeline format.
     
@@ -186,10 +179,10 @@ def convert_latents_prototype_to_pipeline(
 
 
 def convert_latents_pipeline_to_prototype(
-    latents,  # torch.Tensor
+    latents: torch.Tensor,
     scaling_factor: float = SCALING_FACTOR,
     shift_factor: float = SHIFT_FACTOR,
-):
+) -> torch.Tensor:
     """
     Convert Pipeline latents to Prototype format.
     
