@@ -666,86 +666,98 @@ const generateImage = async () => {
       throw new Error('Failed to get reader')
     }
     
+    // 使用缓冲区处理可能被分割的 SSE 消息
+    let buffer = ''
+    
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
       
-      const chunk = decoder.decode(value, { stream: true })
-      const lines = chunk.split('\n')
+      buffer += decoder.decode(value, { stream: true })
       
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6))
-            
-            // 处理进度更新
-            if (data.stage) {
-              switch (data.stage) {
-                case 'loading':
-                  progressStage.value = '🔄 加载模型...'
-                  break
-                case 'generating':
-                  progressStage.value = '🎨 生成中...'
-                  progressStep.value = data.step || 0
-                  progressTotal.value = data.total || params.value.steps
-                  break
-                case 'saving':
-                  progressStage.value = '💾 保存中...'
-                  break
-                case 'completed':
-                  progressStage.value = '✅ 完成!'
-                  break
-                case 'error':
-                  progressStage.value = '❌ 错误'
-                  break
+      // 按双换行符分割完整的 SSE 消息
+      const messages = buffer.split('\n\n')
+      // 最后一个可能是不完整的消息，保留在缓冲区
+      buffer = messages.pop() || ''
+      
+      for (const message of messages) {
+        const lines = message.split('\n')
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              
+              // 处理进度更新
+              if (data.stage) {
+                switch (data.stage) {
+                  case 'loading':
+                    progressStage.value = '🔄 加载模型...'
+                    break
+                  case 'generating':
+                    progressStage.value = '🎨 生成中...'
+                    progressStep.value = data.step || 0
+                    progressTotal.value = data.total || params.value.steps
+                    break
+                  case 'saving':
+                    progressStage.value = '💾 保存中...'
+                    break
+                  case 'completed':
+                    progressStage.value = '✅ 完成!'
+                    break
+                  case 'error':
+                    progressStage.value = '❌ 错误'
+                    break
+                }
+                progressMessage.value = data.message || ''
               }
-              progressMessage.value = data.message || ''
-            }
-            
-            // 处理最终结果
-            if (data.success !== undefined) {
-              if (data.success) {
-                if (data.comparison_mode && data.images) {
-                  // 对比模式：两张图
-                  isComparisonResult.value = true
-                  comparisonImages.value = data.images.map((img: any) => ({
-                    image: img.image.startsWith('data:') ? img.image : `data:image/png;base64,${img.image}`,
-                    lora_path: img.lora_path,
-                    lora_scale: img.lora_scale || params.value.lora_scale,
-                  }))
-                  // 显示第二张图（LoRA）作为主结果
-                  if (data.images.length > 1) {
-                    resultImage.value = comparisonImages.value[1].image
+              
+              // 处理最终结果
+              if (data.success !== undefined) {
+                if (data.success) {
+                  if (data.comparison_mode && data.images) {
+                    // 对比模式：两张图
+                    isComparisonResult.value = true
+                    comparisonImages.value = data.images.map((img: any) => ({
+                      image: img.image.startsWith('data:') ? img.image : `data:image/png;base64,${img.image}`,
+                      lora_path: img.lora_path,
+                      lora_scale: img.lora_scale || params.value.lora_scale,
+                    }))
+                    // 显示第二张图（LoRA）作为主结果
+                    if (data.images.length > 1) {
+                      resultImage.value = comparisonImages.value[1].image
+                    } else {
+                      resultImage.value = comparisonImages.value[0].image
+                    }
+                    resultSeed.value = data.seed
                   } else {
-                    resultImage.value = comparisonImages.value[0].image
+                    // 普通模式
+                    isComparisonResult.value = false
+                    const imgData = data.image || ''
+                    resultImage.value = imgData.startsWith('data:') ? imgData : `data:image/png;base64,${imgData}`
+                    resultSeed.value = data.seed
                   }
-                  resultSeed.value = data.seed
+                  
+                  // 保存结果
+                  try {
+                    localStorage.setItem(STORAGE_KEY_RESULT, JSON.stringify({
+                      image: resultImage.value,
+                      seed: resultSeed.value
+                    }))
+                  } catch (e) {
+                    console.warn('Failed to save result:', e)
+                  }
+                  
+                  ElMessage.success('生成成功！')
+                  fetchHistory()
+                  resetZoom('main')
                 } else {
-                  // 普通模式
-                  isComparisonResult.value = false
-                  resultImage.value = data.image.startsWith('data:') ? data.image : `data:image/png;base64,${data.image}`
-                  resultSeed.value = data.seed
+                  ElMessage.error('生成失败: ' + (data.message || data.error || 'Unknown error'))
                 }
-                
-                // 保存结果
-                try {
-                  localStorage.setItem(STORAGE_KEY_RESULT, JSON.stringify({
-                    image: resultImage.value,
-                    seed: resultSeed.value
-                  }))
-                } catch (e) {
-                  console.warn('Failed to save result:', e)
-                }
-                
-                ElMessage.success('生成成功！')
-                fetchHistory()
-                resetZoom('main')
-              } else {
-                ElMessage.error('生成失败: ' + (data.message || data.error || 'Unknown error'))
               }
+            } catch (e) {
+              // JSON 解析错误，忽略（可能是不完整的数据）
+              console.debug('SSE parse error (may be incomplete):', e)
             }
-          } catch (e) {
-            // JSON 解析错误，忽略
           }
         }
       }
