@@ -422,34 +422,46 @@ async def generate_image_stream(req: GenerationRequest):
         finally:
             progress_queue.put(None)  # End signal
     
-    def generate_sse():
+    async def generate_sse():
         thread = threading.Thread(target=do_generate_with_queue)
         thread.start()
         
         try:
-            while True:
-                item = progress_queue.get(timeout=60)
-                if item is None:
-                    break
-                
-                sync_broadcast_generation_progress(
-                    item.get("step", 0),
-                    item.get("total", 0),
-                    item.get("stage", "generating"),
-                    item.get("message", "")
-                )
-                yield f"data: {json.dumps(item)}\n\n"
-                
-                if item.get("stage") in ["completed", "error"]:
-                    break
+            timeout_counter = 0
+            max_timeout = 300  # 5 分钟总超时
+            
+            while timeout_counter < max_timeout:
+                try:
+                    # 非阻塞获取，避免阻塞事件循环
+                    item = progress_queue.get_nowait()
+                    timeout_counter = 0  # 重置超时计数器
+                    
+                    if item is None:
+                        break
+                    
+                    sync_broadcast_generation_progress(
+                        item.get("step", 0),
+                        item.get("total", 0),
+                        item.get("stage", "generating"),
+                        item.get("message", "")
+                    )
+                    yield f"data: {json.dumps(item)}\n\n"
+                    
+                    if item.get("stage") in ["completed", "error"]:
+                        break
+                        
+                except queue.Empty:
+                    # 队列为空时让出控制权，允许其他协程运行
+                    await asyncio.sleep(0.1)
+                    timeout_counter += 0.1
                     
             if result_holder["result"]:
                 yield f"data: {json.dumps(result_holder['result'])}\n\n"
             elif result_holder["error"]:
                 yield f"data: {json.dumps({'success': False, 'error': result_holder['error']})}\n\n"
+            elif timeout_counter >= max_timeout:
+                yield f"data: {json.dumps({'success': False, 'error': 'Generation timeout'})}\n\n"
                 
-        except queue.Empty:
-            yield f"data: {json.dumps({'success': False, 'error': 'Generation timeout'})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'success': False, 'error': str(e)})}\n\n"
         finally:
