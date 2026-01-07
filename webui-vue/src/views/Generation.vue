@@ -178,20 +178,24 @@
                 <!-- 对比模式：双图展示 -->
                 <div v-if="isComparisonResult && comparisonImages.length === 2" class="comparison-container">
                   <div class="comparison-image-wrapper">
-                    <div class="comparison-label original-label">
-                      <el-icon><Picture /></el-icon>
-                      原始模型 (无 LoRA)
+                    <div class="comparison-image-inner">
+                      <img :src="comparisonImages[0].image" class="comparison-image" draggable="false" />
+                      <div class="comparison-label original-label">
+                        <el-icon><Picture /></el-icon>
+                        原始模型 (无 LoRA)
+                      </div>
                     </div>
-                    <img :src="comparisonImages[0].image" class="comparison-image" draggable="false" />
                   </div>
                   <div class="comparison-divider"></div>
                   <div class="comparison-image-wrapper">
-                    <div class="comparison-label lora-label">
-                      <el-icon><MagicStick /></el-icon>
-                      LoRA: {{ getLoraFileName(comparisonImages[1].lora_path) }}
-                      <span class="lora-weight">(权重: {{ comparisonImages[1].lora_scale?.toFixed(2) || params.lora_scale.toFixed(2) }})</span>
+                    <div class="comparison-image-inner">
+                      <img :src="comparisonImages[1].image" class="comparison-image" draggable="false" />
+                      <div class="comparison-label lora-label">
+                        <el-icon><MagicStick /></el-icon>
+                        LoRA: {{ getLoraFileName(comparisonImages[1].lora_path) }}
+                        <span class="lora-weight">(权重: {{ comparisonImages[1].lora_scale?.toFixed(2) || params.lora_scale.toFixed(2) }})</span>
+                      </div>
                     </div>
-                    <img :src="comparisonImages[1].image" class="comparison-image" draggable="false" />
                   </div>
                 </div>
                 <!-- 普通模式：单图展示 -->
@@ -771,15 +775,89 @@ const generateImage = async () => {
   }
 }
 
-const downloadImage = (url: string | null) => {
+const downloadImage = async (url: string | null) => {
   if (!url) return
   
+  // 对比模式：合成带标题的拼接图
+  if (isComparisonResult.value && comparisonImages.value.length === 2) {
+    try {
+      await downloadComparisonImage()
+      return
+    } catch (e) {
+      console.error('Failed to create comparison image:', e)
+      // 回退到下载单张图
+    }
+  }
+  
+  // 普通模式：直接下载
   const link = document.createElement('a')
   link.href = url
   link.download = `generated_${Date.now()}.png`
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
+}
+
+// 下载对比模式拼接图（带标题）
+const downloadComparisonImage = async () => {
+  const img1 = await loadImage(comparisonImages.value[0].image)
+  const img2 = await loadImage(comparisonImages.value[1].image)
+  
+  const headerHeight = 40
+  const gap = 10
+  const width = img1.width + img2.width + gap
+  const height = Math.max(img1.height, img2.height) + headerHeight
+  
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')!
+  
+  // 背景
+  ctx.fillStyle = '#1e1e1e'
+  ctx.fillRect(0, 0, width, height)
+  
+  // 绘制标题
+  ctx.font = 'bold 16px sans-serif'
+  
+  // 左侧标题
+  ctx.fillStyle = 'rgba(48, 48, 48, 0.9)'
+  ctx.fillRect(0, 0, img1.width, headerHeight)
+  ctx.fillStyle = '#ffffff'
+  ctx.fillText('📷 原始模型 (无 LoRA)', 12, 26)
+  
+  // 右侧标题
+  const loraName = getLoraFileName(comparisonImages.value[1].lora_path)
+  const loraScale = comparisonImages.value[1].lora_scale?.toFixed(2) || params.value.lora_scale.toFixed(2)
+  const gradient = ctx.createLinearGradient(img1.width + gap, 0, width, 0)
+  gradient.addColorStop(0, 'rgba(64, 158, 255, 0.9)')
+  gradient.addColorStop(1, 'rgba(103, 194, 58, 0.9)')
+  ctx.fillStyle = gradient
+  ctx.fillRect(img1.width + gap, 0, img2.width, headerHeight)
+  ctx.fillStyle = '#ffffff'
+  ctx.fillText(`✨ LoRA: ${loraName} (权重: ${loraScale})`, img1.width + gap + 12, 26)
+  
+  // 绘制图片
+  ctx.drawImage(img1, 0, headerHeight)
+  ctx.drawImage(img2, img1.width + gap, headerHeight)
+  
+  // 下载
+  const link = document.createElement('a')
+  link.href = canvas.toDataURL('image/png')
+  link.download = `comparison_${loraName}_${Date.now()}.png`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+// 加载图片
+const loadImage = (src: string): Promise<HTMLImageElement> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = src
+  })
 }
 
 // History Logic
@@ -1152,13 +1230,14 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 8px;
   height: 100%;
   width: 100%;
+  padding: 10px;
+  box-sizing: border-box;
 }
 
 .comparison-image-wrapper {
-  position: relative;
   flex: 1;
   height: 100%;
   display: flex;
@@ -1167,18 +1246,27 @@ onMounted(() => {
   overflow: hidden;
 }
 
+.comparison-image-inner {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
 .comparison-image {
+  display: block;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
   box-shadow: 0 0 20px rgba(0,0,0,0.5);
+  border-radius: 4px;
 }
 
 .comparison-label {
   position: absolute;
-  top: 12px;
-  left: 12px;
-  background: rgba(0, 0, 0, 0.7);
+  top: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.75);
   color: #fff;
   padding: 6px 12px;
   border-radius: 4px;
@@ -1186,6 +1274,14 @@ onMounted(() => {
   font-weight: bold;
   z-index: 10;
   backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.comparison-label.original-label {
+  background: rgba(48, 48, 48, 0.85);
 }
 
 .comparison-label.lora-label {
@@ -1194,8 +1290,8 @@ onMounted(() => {
 
 .comparison-divider {
   width: 2px;
-  height: 80%;
-  background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.5), transparent);
+  height: 60%;
+  background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.4), transparent);
   flex-shrink: 0;
 }
 
