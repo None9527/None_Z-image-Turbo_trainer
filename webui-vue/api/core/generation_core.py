@@ -247,14 +247,26 @@ class ImageGenerator:
         pipe: Any,
         params: GenerationParams,
         progress_callback: Optional[Callable] = None,
-    ) -> List[GeneratedImage]:
-        """生成对比图（无 LoRA vs 有 LoRA）"""
+    ) -> Dict[str, Any]:
+        """生成对比图（无 LoRA vs 有 LoRA）
+        
+        返回:
+            {
+                "images": [{"image": base64, "lora_path": None}, {"image": base64, "lora_path": "xxx", "lora_scale": 1.0}],
+                "composite": GeneratedImage,  # 拼接后的图片（用于历史记录）
+                "seed": int
+            }
+        """
         if not params.lora_path:
             # 没有 LoRA，只生成一张图
-            return [self.generate(pipe, params, progress_callback)]
+            result = self.generate(pipe, params, progress_callback)
+            return {
+                "images": [{"image": result.base64, "lora_path": None, "lora_scale": None}],
+                "composite": result,
+                "seed": result.seed
+            }
         
         model_type = params.model_type.lower()
-        results = []
         
         # 使用相同的 seed
         _, base_seed = self.create_generator(params.seed)
@@ -262,41 +274,40 @@ class ImageGenerator:
         # 1. 先生成无 LoRA 的原图
         self.lora_manager.unload(pipe, model_type)
         generator_no_lora, _ = self.create_generator(base_seed)
-        
         image_no_lora = self._run_pipeline(pipe, params, generator_no_lora, progress_callback)
-        
-        # 创建无 LoRA 的参数副本
-        params_no_lora = GenerationParams(
-            prompt=params.prompt,
-            model_type=params.model_type,
-            negative_prompt=params.negative_prompt,
-            width=params.width,
-            height=params.height,
-            steps=params.steps,
-            guidance_scale=params.guidance_scale,
-            seed=base_seed,
-            lora_path=None,
-            lora_scale=1.0,
-            comparison_mode=True,
-        )
-        result_no_lora = self._save_result(image_no_lora, params_no_lora, base_seed)
-        results.append(result_no_lora)
         
         # 2. 生成有 LoRA 的图
         self.lora_manager.load(pipe, params.lora_path, model_type)
         self.lora_manager.set_scale(pipe, params.lora_scale)
-        
         generator_with_lora, _ = self.create_generator(base_seed)
         image_with_lora = self._run_pipeline(pipe, params, generator_with_lora, progress_callback)
-        
         self.lora_manager.clear_scale(pipe)
         
-        params_with_lora = GenerationParams(
+        # 3. 将两张图编码为 base64（用于前端展示）
+        def image_to_base64(img: Image.Image) -> str:
+            buffered = io.BytesIO()
+            img.save(buffered, format="PNG")
+            return base64.b64encode(buffered.getvalue()).decode()
+        
+        images_data = [
+            {"image": image_to_base64(image_no_lora), "lora_path": None, "lora_scale": None},
+            {"image": image_to_base64(image_with_lora), "lora_path": params.lora_path, "lora_scale": params.lora_scale}
+        ]
+        
+        # 4. 拼接两张图（左右并排）用于历史记录
+        composite_width = image_no_lora.width + image_with_lora.width + 10  # 10px 间隔
+        composite_height = max(image_no_lora.height, image_with_lora.height)
+        composite = Image.new('RGB', (composite_width, composite_height), (30, 30, 30))  # 深灰背景
+        composite.paste(image_no_lora, (0, 0))
+        composite.paste(image_with_lora, (image_no_lora.width + 10, 0))
+        
+        # 5. 保存拼接图到历史记录（只保存一条）
+        params_composite = GenerationParams(
             prompt=params.prompt,
             model_type=params.model_type,
             negative_prompt=params.negative_prompt,
-            width=params.width,
-            height=params.height,
+            width=composite_width,
+            height=composite_height,
             steps=params.steps,
             guidance_scale=params.guidance_scale,
             seed=base_seed,
@@ -304,10 +315,13 @@ class ImageGenerator:
             lora_scale=params.lora_scale,
             comparison_mode=True,
         )
-        result_with_lora = self._save_result(image_with_lora, params_with_lora, base_seed)
-        results.append(result_with_lora)
+        composite_result = self._save_result(composite, params_composite, base_seed)
         
-        return results
+        return {
+            "images": images_data,
+            "composite": composite_result,
+            "seed": base_seed
+        }
 
 
 # 全局实例（便于使用）

@@ -276,22 +276,23 @@ async def generate_image(req: GenerationRequest):
             
             # 对比模式或普通模式
             if req.comparison_mode and req.lora_path:
-                results = generator.generate_comparison(pipe, params)
+                comparison_result = generator.generate_comparison(pipe, params)
                 
-                # 返回两张图片（Base64）
-                images_data = []
-                for r in results:
-                    images_data.append({
-                        "image": f"data:image/png;base64,{r.base64}",
-                        "seed": r.seed,
-                        "lora_path": r.metadata.get("lora_path"),
+                # 新格式: {images, composite, seed}
+                # 为前端添加 data: 前缀
+                images_with_prefix = []
+                for img in comparison_result["images"]:
+                    images_with_prefix.append({
+                        "image": f"data:image/png;base64,{img['image']}",
+                        "lora_path": img["lora_path"],
+                        "lora_scale": img["lora_scale"],
                     })
                 
                 return {
                     "success": True,
                     "comparison_mode": True,
-                    "images": images_data,
-                    "seed": results[0].seed,
+                    "images": images_with_prefix,
+                    "seed": comparison_result["seed"],
                     "model_type": model_type,
                 }
             else:
@@ -380,22 +381,14 @@ async def generate_image_stream(req: GenerationRequest):
             
             # 对比模式或普通模式
             if req.comparison_mode and req.lora_path:
-                results = generator.generate_comparison(pipe, params, progress_callback)
+                comparison_result = generator.generate_comparison(pipe, params, progress_callback)
                 
-                images_data = []
-                for r in results:
-                    images_data.append({
-                        "image": r.base64,
-                        "seed": r.seed,
-                        "lora_path": r.metadata.get("lora_path"),
-                        "lora_scale": r.metadata.get("lora_scale"),
-                    })
-                
+                # 新格式: {images, composite, seed}
                 result_holder["result"] = {
                     "success": True,
                     "comparison_mode": True,
-                    "images": images_data,
-                    "seed": results[0].seed,
+                    "images": comparison_result["images"],
+                    "seed": comparison_result["seed"],
                     "model_type": model_type,
                 }
             else:
