@@ -831,10 +831,11 @@ def main():
                         pred_minus = transformer(x=input_minus_list, t=t_minus_norm, cap_feats=vl_embed)[0]
                         pred_minus = -torch.stack(pred_minus, dim=0).squeeze(2)
                     
-                    # 计算加速度 (二阶差分): a = (v+ - 2v + v-) / dt²
-                    # 理想情况: a ≈ 0 (匀速直线运动)
-                    acceleration = (pred_plus - 2 * model_pred.detach() + pred_minus) / (dt ** 2)
-                    curvature_loss = (acceleration ** 2).mean()
+                    # 计算曲率 (二阶差分): curvature = v+ - 2v + v-
+                    # 理想情况: curvature ≈ 0 (匀速直线运动)
+                    # 注意: 不除以 dt²，直接用二阶差分的大小作为曲率度量
+                    curvature = pred_plus - 2 * model_pred.detach() + pred_minus
+                    curvature_loss = (curvature ** 2).mean()
                     
                     # 添加到总损失
                     loss = loss + args.lambda_curvature * curvature_loss
