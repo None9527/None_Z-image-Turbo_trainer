@@ -569,6 +569,11 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         f"enable_timestep_aware_loss = {'true' if config.get('acrf', {}).get('enable_timestep_aware_loss', False) else 'false'}",
         f"timestep_high_threshold = {config.get('acrf', {}).get('timestep_high_threshold', 0.7)}",
         f"timestep_low_threshold = {config.get('acrf', {}).get('timestep_low_threshold', 0.3)}",
+        # 曲率惩罚
+        f"enable_curvature = {'true' if config.get('acrf', {}).get('enable_curvature', False) else 'false'}",
+        f"lambda_curvature = {config.get('acrf', {}).get('lambda_curvature', 0.05)}",
+        f"curvature_interval = {config.get('acrf', {}).get('curvature_interval', 10)}",
+        f"curvature_start_epoch = {config.get('acrf', {}).get('curvature_start_epoch', 0)}",
         "",
     ]
     
