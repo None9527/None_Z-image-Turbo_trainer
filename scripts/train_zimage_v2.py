@@ -781,6 +781,10 @@ def main():
                 # 更新 micro-step 计数器（每个实际 batch +1）
                 micro_step += 1
                 
+                # DEBUG: 检查曲率参数
+                if micro_step == 1:
+                    logger.info(f"[DEBUG CURV] enable={getattr(args, 'enable_curvature', False)}, lambda={getattr(args, 'lambda_curvature', 0)}, interval={getattr(args, 'curvature_interval', 10)}, start_epoch={getattr(args, 'curvature_start_epoch', 0)}")
+                
                 if (getattr(args, 'enable_curvature', False) and 
                     args.lambda_curvature > 0 and
                     epoch >= getattr(args, 'curvature_start_epoch', 0) and
