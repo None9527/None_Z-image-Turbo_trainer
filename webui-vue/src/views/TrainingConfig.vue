@@ -149,7 +149,6 @@
               </div>
             </template>
 
-            </template>
           </div>
         </el-collapse-item>
 
