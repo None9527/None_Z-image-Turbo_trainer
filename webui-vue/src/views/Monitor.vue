@@ -56,6 +56,10 @@
       <div class="chart-header">
         <h3>Loss 曲线</h3>
         <div class="chart-controls">
+          <div class="smoothing-control">
+            <span class="label">平滑: {{ smoothing }}</span>
+            <el-slider v-model="smoothing" :min="0" :max="0.999" :step="0.001" size="small" style="width: 100px; margin-right: 12px" />
+          </div>
           <el-radio-group v-model="lossChartScale" size="small">
             <el-radio-button label="linear">线性</el-radio-button>
             <el-radio-button label="log">对数</el-radio-button>
@@ -149,6 +153,7 @@ const trainingStore = useTrainingStore()
 const systemStore = useSystemStore()
 
 const lossChartScale = ref<'linear' | 'log'>('linear')
+const smoothing = ref(0.99)
 // GPU 数据通过 WebSocket 实时更新到 systemStore，无需轮询
 
 const progress = computed(() => trainingStore.progress)
@@ -205,6 +210,31 @@ const baseChartConfig = {
   }
 }
 
+const itemStyle = {
+  normal: {
+    color: '#00f5ff',
+    lineStyle: {
+      color: '#00f5ff',
+      width: 1
+    }
+  }
+}
+
+const smoothedLoss = computed(() => {
+  const data = progress.value.lossHistory
+  const alpha = smoothing.value
+  if (data.length === 0) return []
+  
+  let last = data[0]
+  const result = [last]
+  for (let i = 1; i < data.length; i++) {
+    // Simple EMA (No Bias Correction for now, matches user expectation of "start from first value")
+    last = last * alpha + data[i] * (1 - alpha)
+    result.push(last)
+  }
+  return result
+})
+
 const lossChartOption = computed(() => ({
   ...baseChartConfig,
   xAxis: {
@@ -213,15 +243,30 @@ const lossChartOption = computed(() => ({
   },
   yAxis: {
     ...baseChartConfig.yAxis,
-    type: lossChartScale.value === 'log' ? 'log' : 'value'
+    type: lossChartScale.value === 'log' ? 'log' : 'value',
+    min: (value: { min: number }) => Math.max(0, value.min * 0.9), // 稍微留点底边
   },
   series: [
     {
-      name: 'Loss',
+      name: 'Original',
       type: 'line',
       data: progress.value.lossHistory,
+      smooth: false,
+      symbol: 'none',
+      itemStyle: { color: 'rgba(0, 245, 255, 0.2)' },
+      lineStyle: {
+        color: 'rgba(0, 245, 255, 0.2)',
+        width: 1
+      },
+      z: 1
+    },
+    {
+      name: 'Smoothed',
+      type: 'line',
+      data: smoothedLoss.value,
       smooth: true,
       symbol: 'none',
+      itemStyle: { color: '#00f5ff' },
       lineStyle: {
         color: '#00f5ff',
         width: 2
@@ -235,7 +280,8 @@ const lossChartOption = computed(() => ({
             { offset: 1, color: 'rgba(0,245,255,0)' }
           ]
         }
-      }
+      },
+      z: 2
     }
   ]
 }))
@@ -399,6 +445,24 @@ function formatTime(seconds: number): string {
     align-items: center;
     margin-bottom: var(--space-md);
     
+    .chart-controls {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      
+      .smoothing-control {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        
+        .label {
+          white-space: nowrap;
+        }
+      }
+    }
+
     h3 {
       color: var(--text-secondary);
     }
