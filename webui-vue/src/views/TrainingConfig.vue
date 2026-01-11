@@ -968,7 +968,7 @@ const systemPaths = ref({
 // 可用模型列表
 type TagType = 'primary' | 'success' | 'warning' | 'info' | 'danger'
 
-const availableModels = ref<Array<{
+interface ModelOption {
   value: string,
   label: string,
   icon: string,
@@ -976,7 +976,9 @@ const availableModels = ref<Array<{
   tag: string,
   tagType: TagType,
   disabled: boolean
-}}>([
+}
+
+const availableModels = ref<ModelOption[]>([
   {
     value: 'zimage',
     label: 'Z-Image',
