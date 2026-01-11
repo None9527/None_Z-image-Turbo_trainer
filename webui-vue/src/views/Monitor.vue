@@ -222,15 +222,18 @@ const itemStyle = {
 
 const smoothedLoss = computed(() => {
   const data = progress.value.lossHistory
-  const alpha = smoothing.value
+  const smoothWeight = smoothing.value
   if (data.length === 0) return []
   
-  let last = data[0]
-  const result = [last]
-  for (let i = 1; i < data.length; i++) {
-    // Simple EMA (No Bias Correction for now, matches user expectation of "start from first value")
-    last = last * alpha + data[i] * (1 - alpha)
-    result.push(last)
+  // TensorBoard-compatible EMA with Bias Correction
+  // Formula: smoothed[i] = (data[i]*(1-w) + last*w) / (1 - w^(i+1))
+  let smoothedLast = 0
+  const result = []
+  
+  for (let i = 0; i < data.length; i++) {
+    smoothedLast = smoothedLast * smoothWeight + data[i] * (1 - smoothWeight)
+    const debiasWeight = 1 - Math.pow(smoothWeight, i + 1)
+    result.push(smoothedLast / debiasWeight)
   }
   return result
 })

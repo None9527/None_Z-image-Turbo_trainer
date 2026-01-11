@@ -775,10 +775,13 @@ def main():
                 
                 loss_components = {}
                 
+                # 初始化总损失为0，然后累加各分量
+                loss = torch.tensor(0.0, device=model_pred.device, dtype=model_pred.dtype)
+                
                 # L1 Loss
                 l1_loss_val = F.l1_loss(model_pred, target_velocity)
-                loss = args.lambda_l1 * l1_loss_val
                 if args.lambda_l1 > 0:
+                    loss = loss + args.lambda_l1 * l1_loss_val
                     loss_components['l1'] = l1_loss_val.item()
                 
                 # Cosine Loss
