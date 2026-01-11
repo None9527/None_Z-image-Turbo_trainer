@@ -35,6 +35,10 @@ export interface TrainingConfig {
   gradientAccumulationSteps: number
   maxGradNorm: number
   seed: number
+
+  // Loss Configuration
+  lambdaL1: number
+  lambdaCosine: number
 }
 
 export interface TrainingProgress {
@@ -74,7 +78,9 @@ export const useTrainingStore = defineStore('training', () => {
     gradientCheckpointing: true,
     gradientAccumulationSteps: 1,
     maxGradNorm: 1.0,
-    seed: 42
+    seed: 42,
+    lambdaL1: 1.0,
+    lambdaCosine: 0.0
   })
 
   const progress = ref<TrainingProgress>({

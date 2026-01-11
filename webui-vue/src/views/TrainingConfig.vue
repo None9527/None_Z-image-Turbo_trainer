@@ -129,14 +129,50 @@
             <template v-if="config.model_type === 'zimage'">
               <div class="control-row">
                 <span class="label">
-                  Shift
-                  <el-tooltip content="时间步偏移，影响噪声调度，默认 3.0" placement="top">
+                  Dynamic Shift
+                  <el-tooltip content="启用动态 Shift（推荐）。基于分辨率自动计算 Shift 值，更优的噪声调度" placement="top">
+                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-switch v-model="config.acrf.use_dynamic_shift" />
+              </div>
+
+              <!-- 动态 Shift 参数 -->
+              <template v-if="config.acrf.use_dynamic_shift">
+                <div class="control-row">
+                  <span class="label">
+                    Base Shift
+                    <el-tooltip content="动态 Shift 基准值，默认 0.5" placement="top">
+                      <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                    </el-tooltip>
+                  </span>
+                  <el-slider v-model="config.acrf.base_shift" :min="0.1" :max="2.0" :step="0.1" :show-tooltip="false" class="slider-flex" />
+                  <el-input-number v-model="config.acrf.base_shift" :min="0.1" :max="2.0" :step="0.1" controls-position="right" class="input-fixed" />
+                </div>
+                <div class="control-row">
+                  <span class="label">
+                    Max Shift
+                    <el-tooltip content="动态 Shift 最大值，默认 1.15" placement="top">
+                      <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                    </el-tooltip>
+                  </span>
+                  <el-slider v-model="config.acrf.max_shift" :min="0.5" :max="3.0" :step="0.05" :show-tooltip="false" class="slider-flex" />
+                  <el-input-number v-model="config.acrf.max_shift" :min="0.5" :max="3.0" :step="0.05" controls-position="right" class="input-fixed" />
+                </div>
+              </template>
+
+              <!-- 静态 Shift 参数 (关闭动态时显示) -->
+              <div class="control-row" v-else>
+                <span class="label">
+                  Fixed Shift
+                  <el-tooltip content="固定时间步偏移，影响噪声调度，默认 3.0" placement="top">
                     <el-icon class="help-icon"><QuestionFilled /></el-icon>
                   </el-tooltip>
                 </span>
                 <el-slider v-model="config.acrf.shift" :min="1" :max="5" :step="0.1" :show-tooltip="false" class="slider-flex" />
                 <el-input-number v-model="config.acrf.shift" :min="1" :max="5" :step="0.1" controls-position="right" class="input-fixed" />
               </div>
+
               <div class="control-row">
                 <span class="label">
                   Jitter Scale
@@ -773,22 +809,24 @@
             <div class="control-row">
               <span class="label">
                 核心 L1 损失
-                <el-tooltip content="核心速度场学习，必须≥1.0。这是模型学会'从噪声到图像怎么走'的基础监督" placement="top">
+                <el-tooltip content="核心速度场学习。推荐≥1.0。若仅想使用其他Loss（如Freq/Style），可设为0禁用" placement="top">
                   <el-icon class="help-icon"><QuestionFilled /></el-icon>
                 </el-tooltip>
               </span>
-              <el-slider v-model="config.training.lambda_l1" :min="0" :max="2" :step="0.1" :show-tooltip="false" class="slider-flex" />
-              <el-input-number v-model="config.training.lambda_l1" :min="0" :max="2" :step="0.1" controls-position="right" class="input-fixed" />
+              <el-switch v-model="enableL1" style="margin-right: 12px" />
+              <el-slider v-model="config.training.lambda_l1" :min="0" :max="2" :step="0.1" :show-tooltip="false" class="slider-flex" :disabled="!enableL1" />
+              <el-input-number v-model="config.training.lambda_l1" :min="0" :max="2" :step="0.1" controls-position="right" class="input-fixed" :disabled="!enableL1" />
             </div>
             <div class="control-row">
               <span class="label">
-                方向约束 (Cosine)
-                <el-tooltip content="[高级] 强制速度向量方向一致。通常L1已足够，高质量微调时可设0.1-0.3" placement="top">
+                方向约束 Cosine
+                <el-tooltip content="强制速度向量方向一致。设为0禁用。高质量微调时可设0.1-0.3" placement="top">
                   <el-icon class="help-icon"><QuestionFilled /></el-icon>
                 </el-tooltip>
               </span>
-              <el-slider v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.05" :show-tooltip="false" class="slider-flex" />
-              <el-input-number v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.05" controls-position="right" class="input-fixed" />
+              <el-switch v-model="enableCosine" style="margin-right: 12px" />
+              <el-slider v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.05" :show-tooltip="false" class="slider-flex" :disabled="!enableCosine" />
+              <el-input-number v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.05" controls-position="right" class="input-fixed" :disabled="!enableCosine" />
             </div>
             
             <!-- 频域感知损失 (开关+权重+子参数) -->
@@ -1071,7 +1109,7 @@ function getDefaultConfig() {
       shift: 3.0,
       jitter_scale: 0.02,
       // 动态 shift 参数
-      use_dynamic_shifting: true,
+      use_dynamic_shift: true,
       base_shift: 0.5,
       max_shift: 1.15,
       // Min-SNR 加权参数（公用）
@@ -1445,11 +1483,37 @@ function parseLearningRate() {
   }
 }
 
-// 格式化学习率为字符串
 function formatLearningRate(value: number): string {
   if (value >= 0.001) return value.toString()
   return value.toExponential().replace('e-', 'e-').replace('+', '')
 }
+
+// Loss Toggle Logic
+const lastL1 = ref(1.0)
+const enableL1 = computed({
+  get: () => config.value.training.lambda_l1 > 0,
+  set: (val: boolean) => {
+    if (val) {
+      config.value.training.lambda_l1 = lastL1.value > 0 ? lastL1.value : 1.0
+    } else {
+      if (config.value.training.lambda_l1 > 0) lastL1.value = config.value.training.lambda_l1
+      config.value.training.lambda_l1 = 0
+    }
+  }
+})
+
+const lastCosine = ref(0.1)
+const enableCosine = computed({
+  get: () => config.value.training.lambda_cosine > 0,
+  set: (val: boolean) => {
+    if (val) {
+      config.value.training.lambda_cosine = lastCosine.value > 0 ? lastCosine.value : 0.1
+    } else {
+      if (config.value.training.lambda_cosine > 0) lastCosine.value = config.value.training.lambda_cosine
+      config.value.training.lambda_cosine = 0
+    }
+  }
+})
 </script>
 
 <style scoped>
