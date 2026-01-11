@@ -181,6 +181,28 @@ get_local_ip() {
 
 LOCAL_IP=$(get_local_ip)
 
+# 启动 TensorBoard
+LOG_DIR="$LORA_PATH/logs"
+mkdir -p "$LOG_DIR"
+echo -e "${GREEN}启动 TensorBoard...${NC}"
+# 检查端口是否被占用 (简单检查)
+if lsof -Pi :6006 -sTCP:LISTEN -t >/dev/null ; then
+    echo -e "  端口 6006 被占用，跳过启动 TensorBoard"
+else
+    tensorboard --logdir "$LOG_DIR" --port 6006 --bind_all > /dev/null 2>&1 &
+    TB_PID=$!
+    echo -e "  地址:   ${CYAN}http://localhost:6006${NC}"
+fi
+
+# 清理函数
+cleanup() {
+    echo -e "\n${YELLOW}正在停止服务...${NC}"
+    if [ -n "$TB_PID" ]; then
+        kill "$TB_PID" 2>/dev/null
+    fi
+}
+trap cleanup EXIT
+
 # 启动服务
 echo -e "${GREEN}启动 Web UI...${NC}"
 echo -e "访问地址:"

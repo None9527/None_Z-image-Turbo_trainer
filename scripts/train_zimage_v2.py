@@ -33,6 +33,7 @@ from tqdm import tqdm
 from accelerate import Accelerator
 from accelerate.utils import set_seed
 from diffusers.optimization import get_scheduler
+from torch.utils.tensorboard import SummaryWriter
 
 # Local imports
 from zimage_trainer.networks.lora import LoRANetwork, ZIMAGE_TARGET_NAMES, ZIMAGE_ADALN_NAMES, EXCLUDE_PATTERNS
@@ -594,7 +595,6 @@ def main():
     
     # Calculate max_train_steps AFTER prepare (len(dataloader) is already divided by num_gpus)
     max_train_steps = len(dataloader) * args.num_train_epochs // args.gradient_accumulation_steps
-    
     lr_scheduler = get_scheduler(
         args.lr_scheduler,
         optimizer=optimizer,
@@ -602,6 +602,17 @@ def main():
         num_training_steps=max_train_steps,
         num_cycles=args.lr_num_cycles,
     )
+    
+    logger.info(f"Total training steps: {max_train_steps}")
+
+    # Initialize TensorBoard writer
+    writer = None
+    if accelerator.is_main_process:
+        from torch.utils.tensorboard import SummaryWriter
+        logging_dir = os.path.join(args.output_dir, "logs", args.output_name)
+        os.makedirs(logging_dir, exist_ok=True)
+        writer = SummaryWriter(log_dir=logging_dir)
+        logger.info(f"TensorBoard log directory: {logging_dir}")
     
     logger.info(f"  ✓ 训练轮数: {args.num_train_epochs}, 总步数: {max_train_steps}")
     
@@ -1011,6 +1022,17 @@ def main():
                 if accelerator.is_main_process:
                     curv = last_curv_loss
                     print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={avg_loss:.4f} ema={ema_loss:.4f} l1={avg_l1:.4f} cos={avg_cos:.4f} freq={avg_freq:.4f} style={avg_style:.4f} L2={avg_l2:.4f} curv={curv:.4f} lr={current_lr:.2e}", flush=True)
+                    
+                    if writer:
+                        writer.add_scalar("train/loss", avg_loss, global_step)
+                        writer.add_scalar("train/ema_loss", ema_loss, global_step)
+                        writer.add_scalar("train/l1_loss", avg_l1, global_step)
+                        writer.add_scalar("train/cosine_loss", avg_cos, global_step)
+                        writer.add_scalar("train/freq_loss", avg_freq, global_step)
+                        writer.add_scalar("train/style_loss", avg_style, global_step)
+                        writer.add_scalar("train/l2_loss", avg_l2, global_step)
+                        writer.add_scalar("train/curvature_loss", curv, global_step)
+                        writer.add_scalar("train/learning_rate", current_lr, global_step)
                 
                 # ========== 正则训练步骤 (按比例执行) ==========
                 # 正则化步骤在主训练步骤完成后独立执行，不参与梯度累积周期
@@ -1077,6 +1099,9 @@ def main():
     
     logger.info("\n[DONE] Training complete!")
 
+
+    if writer:
+        writer.close()
 
 if __name__ == "__main__":
     main()

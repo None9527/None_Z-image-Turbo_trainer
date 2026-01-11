@@ -42,6 +42,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "PyYAML>=6.0.0",
     "requests>=2.32.0",
+    "tensorboard>=2.15.0",
 ]
 
 [project.optional-dependencies]
