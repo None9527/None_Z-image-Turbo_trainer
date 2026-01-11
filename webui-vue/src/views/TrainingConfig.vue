@@ -463,7 +463,7 @@
               <el-switch v-model="config.dataset.enable_bucket" />
             </div>
 
-            <div class="subsection-label">🎯 Turbo 加速保持 (Drop Text)</div>
+            <div class="subsection-label">🎯 CFG Drop Text</div>
             <div class="control-row">
               <span class="label">
                 Drop Text 比例
@@ -481,7 +481,7 @@
               show-icon
               style="margin-top: 8px"
             >
-              已启用 Drop Text ({{ (config.dataset.drop_text_ratio * 100).toFixed(0) }}%)，有助于保持 Turbo 低 CFG 加速能力
+              已启用 Drop Text ({{ (config.dataset.drop_text_ratio * 100).toFixed(0) }}%)，有助于保持低 CFG 加速能力
             </el-alert>
 
             <div class="subsection-label-with-action">
@@ -976,17 +976,18 @@ const availableModels = ref<Array<{
   tag: string
   tagType: TagType
   disabled: boolean
-}>>([
+}}>([
   {
     value: 'zimage',
-    label: 'Z-Image (Turbo)',
+    label: 'Z-Image',
     icon: '⚡',
-    description: '10 步加速推理，原生 Turbo 模型',
+    description: 'Z-Image LoRA 训练',
     tag: '推荐',
     tagType: 'success',
     disabled: false
   }
 ])
+
 
 // 训练模式列表
 const trainingModes = ref<Array<{
