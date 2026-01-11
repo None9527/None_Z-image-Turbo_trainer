@@ -967,7 +967,7 @@ const handleWheel = (e: WheelEvent, target: 'main' | 'lightbox') => {
 
 const startDrag = (e: MouseEvent, target: 'main' | 'lightbox') => {
   const state = getZoomState(target)
-  if (state.scale <= 1) return
+  // if (state.scale <= 1) return // Allow dragging at any scale
   state.isDragging = true
   state.startX = e.clientX - state.translateX
   state.startY = e.clientY - state.translateY

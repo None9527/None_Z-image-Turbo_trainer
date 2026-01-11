@@ -125,6 +125,28 @@
               <el-input-number v-model="config.acrf.turbo_steps" :min="1" :max="10" :step="1" controls-position="right" class="input-fixed" />
             </div>
 
+            <!-- Anchor & Jitter (Turbo 相关) -->
+            <div class="control-row">
+              <span class="label">
+                Use Anchor
+                <el-tooltip content="启用锚点时间步 (t=max)，增强一致性" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-switch v-model="config.acrf.use_anchor" />
+            </div>
+            
+            <div class="control-row">
+              <span class="label">
+                Jitter Scale
+                <el-tooltip content="时间步抖动幅度，增加训练多样性。关闭 Turbo 时自动禁用" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-slider v-model="config.acrf.jitter_scale" :min="0" :max="0.1" :step="0.01" :show-tooltip="false" class="slider-flex" :disabled="!config.acrf.enable_turbo" />
+              <el-input-number v-model="config.acrf.jitter_scale" :min="0" :max="0.1" :step="0.01" controls-position="right" class="input-fixed" :disabled="!config.acrf.enable_turbo" />
+            </div>
+
             <!-- ============ Zimage 特有参数 ============ -->
             <template v-if="config.model_type === 'zimage'">
               <div class="control-row">
@@ -173,16 +195,6 @@
                 <el-input-number v-model="config.acrf.shift" :min="1" :max="5" :step="0.1" controls-position="right" class="input-fixed" />
               </div>
 
-              <div class="control-row">
-                <span class="label">
-                  Jitter Scale
-                  <el-tooltip content="时间步抖动幅度，增加训练多样性，0=关闭" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-slider v-model="config.acrf.jitter_scale" :min="0" :max="0.1" :step="0.01" :show-tooltip="false" class="slider-flex" />
-                <el-input-number v-model="config.acrf.jitter_scale" :min="0" :max="0.1" :step="0.01" controls-position="right" class="input-fixed" />
-              </div>
             </template>
 
           </div>
@@ -805,29 +817,39 @@
 
             <div class="subsection-label">损失权重配置（自由组合）</div>
             
-            <!-- 基础损失: L1 + Cosine (始终显示) -->
+            <!-- 基础损失: L1 + Cosine -->
             <div class="control-row">
               <span class="label">
-                核心 L1 损失
-                <el-tooltip content="核心速度场学习。推荐≥1.0。若仅想使用其他Loss（如Freq/Style），可设为0禁用" placement="top">
+                启用基础损失 (L1 + Cosine)
+                <el-tooltip content="控制核心 L1 和 Cosine 损失。关闭后通过 Freq/Style 等其他 Loss 驱动训练" placement="top">
                   <el-icon class="help-icon"><QuestionFilled /></el-icon>
                 </el-tooltip>
               </span>
-              <el-switch v-model="enableL1" style="margin-right: 12px" />
-              <el-slider v-model="config.training.lambda_l1" :min="0" :max="2" :step="0.1" :show-tooltip="false" class="slider-flex" :disabled="!enableL1" />
-              <el-input-number v-model="config.training.lambda_l1" :min="0" :max="2" :step="0.1" controls-position="right" class="input-fixed" :disabled="!enableL1" />
+              <el-switch v-model="enableBasicLoss" />
             </div>
-            <div class="control-row">
-              <span class="label">
-                方向约束 Cosine
-                <el-tooltip content="强制速度向量方向一致。设为0禁用。高质量微调时可设0.1-0.3" placement="top">
-                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                </el-tooltip>
-              </span>
-              <el-switch v-model="enableCosine" style="margin-right: 12px" />
-              <el-slider v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.05" :show-tooltip="false" class="slider-flex" :disabled="!enableCosine" />
-              <el-input-number v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.05" controls-position="right" class="input-fixed" :disabled="!enableCosine" />
-            </div>
+
+            <template v-if="enableBasicLoss">
+              <div class="control-row">
+                <span class="label">
+                  核心 L1 损失
+                  <el-tooltip content="核心速度场学习。推荐≥1.0" placement="top">
+                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-slider v-model="config.training.lambda_l1" :min="0" :max="2" :step="0.1" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.training.lambda_l1" :min="0" :max="2" :step="0.1" controls-position="right" class="input-fixed" />
+              </div>
+              <div class="control-row">
+                <span class="label">
+                  方向约束 Cosine
+                  <el-tooltip content="强制速度向量方向一致。高质量微调时可设0.1-0.3" placement="top">
+                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-slider v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.05" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.training.lambda_cosine" :min="0" :max="1" :step="0.05" controls-position="right" class="input-fixed" />
+              </div>
+            </template>
             
             <!-- 频域感知损失 (开关+权重+子参数) -->
             <div class="subsection-label">🔍 频域增强 (纹理+结构)</div>
@@ -1488,30 +1510,29 @@ function formatLearningRate(value: number): string {
   return value.toExponential().replace('e-', 'e-').replace('+', '')
 }
 
-// Loss Toggle Logic
-const lastL1 = ref(1.0)
-const enableL1 = computed({
-  get: () => config.value.training.lambda_l1 > 0,
+// Basic Loss Toggle Logic
+const lastBasicLoss = ref({ l1: 1.0, cosine: 0.1 })
+const enableBasicLoss = computed({
+  get: () => config.value.training.lambda_l1 > 0 || config.value.training.lambda_cosine > 0,
   set: (val: boolean) => {
     if (val) {
-      config.value.training.lambda_l1 = lastL1.value > 0 ? lastL1.value : 1.0
+      config.value.training.lambda_l1 = lastBasicLoss.value.l1 > 0 ? lastBasicLoss.value.l1 : 1.0
+      config.value.training.lambda_cosine = lastBasicLoss.value.cosine
     } else {
-      if (config.value.training.lambda_l1 > 0) lastL1.value = config.value.training.lambda_l1
+      lastBasicLoss.value = {
+        l1: config.value.training.lambda_l1,
+        cosine: config.value.training.lambda_cosine
+      }
       config.value.training.lambda_l1 = 0
+      config.value.training.lambda_cosine = 0
     }
   }
 })
 
-const lastCosine = ref(0.1)
-const enableCosine = computed({
-  get: () => config.value.training.lambda_cosine > 0,
-  set: (val: boolean) => {
-    if (val) {
-      config.value.training.lambda_cosine = lastCosine.value > 0 ? lastCosine.value : 0.1
-    } else {
-      if (config.value.training.lambda_cosine > 0) lastCosine.value = config.value.training.lambda_cosine
-      config.value.training.lambda_cosine = 0
-    }
+// Turbo 联动逻辑
+watch(() => config.value.acrf.enable_turbo, (val) => {
+  if (!val) {
+    config.value.acrf.jitter_scale = 0
   }
 })
 </script>
