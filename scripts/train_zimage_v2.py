@@ -773,10 +773,13 @@ def main():
                 if timestep_aware_scheduler:
                     ts_weights = timestep_aware_scheduler.get_mean_weights(timesteps, num_train_timesteps=1000)
                 
+                loss_components = {}
+                
                 # L1 Loss
                 l1_loss_val = F.l1_loss(model_pred, target_velocity)
                 loss = args.lambda_l1 * l1_loss_val
-                loss_components = {'l1': l1_loss_val.item()}
+                if args.lambda_l1 > 0:
+                    loss_components['l1'] = l1_loss_val.item()
                 
                 # Cosine Loss
                 cos_loss_val = 0.0
@@ -786,7 +789,7 @@ def main():
                     ).mean()
                     loss = loss + args.lambda_cosine * cos_loss
                     cos_loss_val = cos_loss.item()
-                loss_components['cosine'] = cos_loss_val
+                    loss_components['cosine'] = cos_loss_val
                 
                 # Frequency Loss (requires noisy_latents and timesteps)
                 # 应用时间步感知权重缩放
