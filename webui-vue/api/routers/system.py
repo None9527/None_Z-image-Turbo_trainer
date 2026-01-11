@@ -7,7 +7,7 @@ import hashlib
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from core.config import PROJECT_ROOT, MODEL_PATH, LONGCAT_MODEL_PATH, MODEL_PATHS, get_model_path
+from core.config import PROJECT_ROOT, MODEL_PATH, MODEL_PATHS, get_model_path
 from core import state
 
 # 导入新的模型检测和下载抽象层
@@ -15,7 +15,7 @@ import sys
 sys.path.insert(0, str(PROJECT_ROOT))
 from src.models.model_detector import (
     create_model_detector,
-    ModelStatus, ZImageDetector, LongCatDetector
+    ModelStatus, ZImageDetector
 )
 from src.models.model_downloader import (
     create_model_downloader, get_model_download_info, DownloadStatus,
@@ -28,12 +28,12 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 class ModelOpsRequest(BaseModel):
     model_type: str = "zimage"
 
-# 多模型支持 - 模型规格定义
+# 模型规格定义 (仅 Z-Image)
 MODEL_SPECS = {
     "zimage": {
         "name": "Z-Image-Turbo",
         "model_id": "Tongyi-MAI/Z-Image-Turbo",
-        "path_env": "MODEL_PATH",  # 使用 MODEL_PATH 环境变量
+        "path_env": "MODEL_PATH",
         "expected_files": {
             "model_index.json": {"required": True, "min_size": 100},
             "transformer": {
@@ -61,51 +61,6 @@ MODEL_SPECS = {
                 "required": True,
                 "files": {
                     "tokenizer.json": {"min_size": 1000},
-                    "tokenizer_config.json": {"min_size": 100},
-                }
-            },
-            "scheduler": {
-                "required": True,
-                "files": {
-                    "scheduler_config.json": {"min_size": 100},
-                }
-            }
-        }
-    },
-    "longcat": {
-        "name": "LongCat-Image-Dev",
-        "model_id": "meituan-longcat/LongCat-Image-Dev",
-        "path_env": "LONGCAT_MODEL_PATH",
-        "default_path": "longcat_models",  # 默认下载目录
-        "expected_files": {
-            "model_index.json": {"required": True, "min_size": 100},
-            "transformer": {
-                "required": True,
-                "files": {
-                    # config.json 或 configuration.json 均可，降低严格度，只检查核心权重索引
-                    "diffusion_pytorch_model.safetensors.index.json": {"min_size": 500},
-                }
-            },
-            "vae": {
-                "required": True,
-                "files": {
-                    "config.json": {"min_size": 100},
-                    # VAE 约 335MB
-                    "diffusion_pytorch_model.safetensors": {"min_size": 100 * 1024 * 1024},
-                }
-            },
-            "text_encoder": {
-                "required": True,
-                "files": {
-                    "config.json": {"min_size": 100},
-                    # Text encoder 约 9.4GB，检查 index 文件
-                    "model.safetensors.index.json": {"min_size": 500},
-                }
-            },
-            "tokenizer": {
-                "required": True,
-                "files": {
-                    "tokenizer.json": {"min_size": 100000},  # 约 2.7MB
                     "tokenizer_config.json": {"min_size": 100},
                 }
             },
@@ -216,8 +171,8 @@ async def get_model_status(model_type: Optional[str] = None):
     """获取模型状态（统一使用 ModelDetector.validate_local）"""
     if model_type is None:
         model_type = "zimage"
-    if model_type not in ["zimage", "longcat"]:
-        model_type = "zimage"
+    # 强制使用 zimage
+    model_type = "zimage"
         
     try:
         model_path = get_model_path(model_type, "base")

@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Models Package - 多模型适配器
+Models Package - 模型适配器
 
 支持的模型:
 - Z-Image (Turbo): 阿里 Z-Image Turbo 10 步模型
-- LongCat-Image: 美团 LongCat-Image 模型（基于 FLUX）
 
 使用方法:
     from models import get_adapter, list_adapters, auto_detect_adapter
@@ -14,7 +13,7 @@ Models Package - 多模型适配器
         adapter = get_adapter("zimage")
     
     # 列出所有适配器
-    print(list_adapters())  # ['zimage', 'longcat']
+    print(list_adapters())  # ['zimage']
     
     # 自动检测
     adapter_name = auto_detect_adapter("/path/to/model")
@@ -43,11 +42,9 @@ if _TORCH_AVAILABLE:
 
     # 导入子模块以触发注册
     from . import zimage
-    from . import longcat
 
-    # 导出具体适配器（可选，方便直接使用）
+    # 导出具体适配器
     from .zimage import ZImageAdapter
-    from .longcat import LongCatAdapter
 
     __all__ = [
         # 基类
@@ -61,9 +58,7 @@ if _TORCH_AVAILABLE:
         "auto_detect_adapter",
         # 具体适配器
         "ZImageAdapter",
-        "LongCatAdapter",
     ]
 else:
     # 导出空列表或仅导出与 torch 无关的工具（如果有）
     __all__ = []
-

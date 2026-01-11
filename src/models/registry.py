@@ -18,16 +18,12 @@ logger = logging.getLogger(__name__)
 # 全局适配器注册表
 _ADAPTERS: Dict[str, Type[ModelAdapter]] = {}
 
-# 名称别名映射
+# 名称别名映射 (仅 Z-Image)
 _ALIASES = {
     "zimage": "zimage",
     "z_image": "zimage",
     "z_image_turbo": "zimage",
     "zimage_turbo": "zimage",
-    "longcat": "longcat",
-    "longcat_image": "longcat",
-    "long_cat": "longcat",
-    "flux": "longcat",  # LongCat 基于 FLUX 架构
 }
 
 
@@ -70,6 +66,10 @@ def get_adapter(name: str, **kwargs) -> ModelAdapter:
     name_lower = name.lower().replace("-", "_").replace(" ", "_")
     resolved_name = _ALIASES.get(name_lower, name_lower)
     
+    # 强制使用 zimage
+    if resolved_name not in _ADAPTERS:
+        resolved_name = "zimage"
+    
     if resolved_name not in _ADAPTERS:
         available = list_adapters()
         raise ValueError(
@@ -98,7 +98,7 @@ def auto_detect_adapter(model_path: str) -> Optional[str]:
         model_path: 模型路径
         
     Returns:
-        适配器名称，无法检测时返回 None
+        适配器名称，无法检测时返回 "zimage"
     """
     path = Path(model_path)
     
@@ -107,12 +107,6 @@ def auto_detect_adapter(model_path: str) -> Optional[str]:
     
     if "zimage" in path_lower or "z-image" in path_lower:
         return "zimage"
-    
-    if "longcat" in path_lower or "long_cat" in path_lower:
-        return "longcat"
-    
-    if "flux" in path_lower:
-        return "longcat"  # LongCat 基于 FLUX 架构
     
     # 检查配置文件
     if path.is_dir():
@@ -127,13 +121,11 @@ def auto_detect_adapter(model_path: str) -> Optional[str]:
                 
                 if "zimage" in model_type:
                     return "zimage"
-                elif "longcat" in model_type or "flux" in model_type:
-                    return "longcat"
             except Exception:
                 pass
     
-    logger.warning(f"Could not auto-detect adapter for: {model_path}")
-    return None
+    # 默认返回 zimage
+    return "zimage"
 
 
 def _ensure_adapters_loaded():
@@ -143,9 +135,3 @@ def _ensure_adapters_loaded():
             from .zimage import adapter as zimage_adapter  # noqa: F401
         except ImportError as e:
             logger.debug(f"Could not import zimage adapter: {e}")
-        
-        try:
-            from .longcat import adapter as longcat_adapter  # noqa: F401
-        except ImportError as e:
-            logger.debug(f"Could not import longcat adapter: {e}")
-

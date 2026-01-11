@@ -8,7 +8,7 @@ export interface TrainingConfig {
   outputName: string
 
   // 模型配置
-  modelType: 'zimage' | 'longcat' | 'flux'  // 模型类型
+  modelType: 'zimage'  // 模型类型 (仅支持 Z-Image)
   modelPath: string
   vaePath: string
   textEncoderPath: string
@@ -144,13 +144,13 @@ export const useTrainingStore = defineStore('training', () => {
     // 历史数据由后端 training_history 维护，通过 setHistory 设置
     progress.value = { ...progress.value, ...data }
   }
-  
+
   function setHistory(lossHistory: number[], lrHistory: number[]) {
     // 从后端恢复完整的历史数据
     progress.value.lossHistory = lossHistory
     progress.value.lrHistory = lrHistory
   }
-  
+
   function appendHistory(loss?: number, lr?: number) {
     // 追加单个历史数据点（用于实时更新）
     if (loss !== undefined) {

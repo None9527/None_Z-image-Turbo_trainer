@@ -29,7 +29,7 @@ class CacheGenerationRequest(BaseModel):
     generateText: bool
     vaePath: str = ""  # 已弃用，后端根据 modelType 自动获取
     textEncoderPath: str = ""  # 已弃用，后端根据 modelType 自动获取
-    modelType: str = "zimage"  # 模型类型: zimage, longcat
+    modelType: str = "zimage"  # 模型类型: 仅 zimage
     resolution: int = 1024
     batchSize: int = 1
     maxSequenceLength: int = 512  # 文本编码器最大序列长度
@@ -127,12 +127,8 @@ async def generate_cache(request: CacheGenerationRequest):
         # 重置进度（清除上次遗留）
         state.reset_cache_progress("latent")
         
-        # 根据模型类型选择缓存脚本（使用独立脚本，避免触发 __init__.py 导致 CUDA 初始化问题）
-        cache_script_map = {
-            "zimage": str(PROJECT_ROOT / "scripts" / "cache_latents_standalone.py"),
-            "longcat": str(PROJECT_ROOT / "scripts" / "cache_latents_standalone.py"),  # TODO: LongCat 独立脚本
-        }
-        latent_script = cache_script_map.get(request.modelType, str(PROJECT_ROOT / "scripts" / "cache_latents_standalone.py"))
+        # 缓存脚本（使用独立脚本，避免触发 __init__.py 导致 CUDA 初始化问题）
+        latent_script = str(PROJECT_ROOT / "scripts" / "cache_latents_standalone.py")
         
         cmd_latent = [
             sys.executable, latent_script,
@@ -170,12 +166,8 @@ async def generate_cache(request: CacheGenerationRequest):
         # 重置进度（清除上次遗留）
         state.reset_cache_progress("text")
         
-        # 根据模型类型选择text缓存脚本（使用独立脚本）
-        text_script_map = {
-            "zimage": str(PROJECT_ROOT / "scripts" / "cache_text_encoder_standalone.py"),
-            "longcat": str(PROJECT_ROOT / "scripts" / "cache_text_encoder_standalone.py"),  # TODO: LongCat 独立脚本
-        }
-        text_script = text_script_map.get(request.modelType, str(PROJECT_ROOT / "scripts" / "cache_text_encoder_standalone.py"))
+        # text缓存脚本（使用独立脚本）
+        text_script = str(PROJECT_ROOT / "scripts" / "cache_text_encoder_standalone.py")
         
         # 如果同时请求了 latent，则排队等待（顺序执行）
         if request.generateLatent:

@@ -12,15 +12,12 @@
             </template>
             
             <el-form :model="params" size="small" class="params-form">
-              <!-- Model Type Selector -->
+              <!-- 模型类型选择器 (仅 Z-Image) -->
               <div class="param-group">
                 <div class="group-label">模型类型 (MODEL)</div>
                 <el-radio-group v-model="params.model_type" class="model-selector">
                   <el-radio-button label="zimage">
                     <el-icon><Aim /></el-icon> Z-Image
-                  </el-radio-button>
-                  <el-radio-button label="longcat">
-                    <el-icon><MagicStick /></el-icon> LongCat
                   </el-radio-button>
                 </el-radio-group>
               </div>
@@ -306,8 +303,8 @@
             <div class="history-info">
               <div class="history-prompt" :title="item.metadata.prompt">{{ item.metadata.prompt }}</div>
               <div class="history-meta">
-                <el-tag size="small" :type="(item.metadata.model_type === 'longcat' ? 'warning' : 'primary') as 'warning' | 'primary'" effect="plain">
-                  {{ item.metadata.model_type === 'longcat' ? 'LongCat' : 'Z-Image' }}
+                <el-tag size="small" type="primary" effect="plain">
+                  Z-Image
                 </el-tag>
                 <span>{{ item.metadata.width }}x{{ item.metadata.height }}</span>
                 <span>Seed: {{ item.metadata.seed }}</span>
@@ -386,8 +383,8 @@
             </div>
             <div class="info-item">
               <span class="label">Model:</span>
-              <el-tag size="small" :type="(lightboxItem.metadata.model_type === 'longcat' ? 'warning' : 'primary') as 'warning' | 'primary'">
-                {{ lightboxItem.metadata.model_type === 'longcat' ? 'LongCat' : 'Z-Image' }}
+              <el-tag size="small" type="primary">
+                Z-Image
               </el-tag>
             </div>
             <div class="info-item" v-if="lightboxItem.metadata.lora_path">
@@ -452,7 +449,7 @@ const defaultParams = {
   lora_path: null as string | null,
   lora_scale: 1.0,
   comparison_mode: false,
-  model_type: "zimage" as "zimage" | "longcat"
+  model_type: "zimage"
 }
 
 const savedParams = loadSavedParams()

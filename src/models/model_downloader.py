@@ -309,12 +309,6 @@ class ModelDownloadManager:
                 "model_id": "Tongyi-MAI/Z-Image-Turbo",
                 "size_gb": 32.0,
                 "description": "阿里Z-Image Turbo 10步加速模型"
-            },
-            "longcat": {
-                "name": "LongCat-Image", 
-                "model_id": "meituan-longcat/LongCat-Image",
-                "size_gb": 35.0,
-                "description": "美团LongCat-Image基于FLUX架构"
             }
         }
     

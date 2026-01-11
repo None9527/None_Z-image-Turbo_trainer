@@ -39,20 +39,6 @@ MODEL_SCHEMAS = {
             {"type": "file", "path": "vae/diffusion_pytorch_model.safetensors", "min_size": 100 * 1024 * 1024},
             {"type": "file", "path": "vae/config.json", "min_size": 10},
         ]
-    },
-    "longcat": {
-        "rules": [
-            {"type": "file", "path": "model_index.json", "min_size": 10},
-            {"type": "alternative", "paths": ["config.json", "configuration.json"], "name": "master_config", "required": True},
-            # 权重文件校验
-            # Transformer (单文件 -> 检查 safetensors, >10GB 以确保完整性)
-            {"type": "file", "path": "transformer/diffusion_pytorch_model.safetensors", "min_size": 10 * 1024 * 1024 * 1024},
-            {"type": "file", "path": "transformer/config.json", "min_size": 10},
-            # Text Encoder (分片 -> 检查 index)
-            {"type": "file", "path": "text_encoder/model.safetensors.index.json", "min_size": 10},
-            # VAE (假设单文件)
-            {"type": "file", "path": "vae/diffusion_pytorch_model.safetensors", "min_size": 100 * 1024 * 1024},
-        ]
     }
 }
 
@@ -224,9 +210,7 @@ class ModelDetector(ABC):
 
     def detect_model_type_key(self) -> str:
         # 简单映射，子类可覆盖
-        if "z-image" in self.spec.model_id.lower(): return "zimage"
-        if "longcat" in self.spec.model_id.lower(): return "longcat"
-        return "unknown"
+        return "zimage"
 
     def validate_local(self) -> Dict[str, Any]:
         """本地快速校验"""
@@ -400,23 +384,11 @@ class ZImageDetector(ModelDetector):
             aliases=["zimage", "z-image"]
         )
 
-class LongCatDetector(ModelDetector):
-    def get_spec(self) -> ModelSpec:
-        return ModelSpec(
-            name="LongCat-Image",
-            model_id="meituan-longcat/LongCat-Image-Dev",
-            description="美团LongCat-Image基于FLUX架构",
-            default_path="longcat_models",
-            size_gb=35.0,
-            aliases=["longcat", "longcat-image"]
-        )
-
 # --- Registry ---
 
 class ModelDetectorRegistry:
     _detectors = {
         "zimage": ZImageDetector,
-        "longcat": LongCatDetector
     }
     
     @classmethod
@@ -431,29 +403,9 @@ class ModelDetectorRegistry:
     @classmethod
     def auto_detect(cls, path: Path) -> Optional[str]:
         """简单启发式检测"""
-        # 尝试实例化每个检测器并进行快速校验
-        # 更好的方式是基于特征文件判断，这里简化处理
-        for type_name, detector_cls in cls._detectors.items():
-            try:
-                detector = detector_cls(path)
-                # 检查 schema 中核心文件是否存在
-                # 例如 zimage 必须有 model_index.json
-                # longcat 必须有 model_index.json
-                # 简单的: model_index.json 存在即认为可能是
-                if (path / "model_index.json").exists():
-                    # 进一步区分: model_id 包含 z-image?
-                    # 但 path 是本地路径，无法直接得知。
-                    # 这里暂时返回 zimage 优先，或者根据路径名
-                    path_str = str(path).lower()
-                    if "zimage" in path_str or "z-image" in path_str:
-                         if type_name == "zimage": return type_name
-                    if "longcat" in path_str:
-                         if type_name == "longcat": return type_name
-                    
-                    # 默认返回 zimage 如果有 model_index?
-                    return "zimage" 
-            except:
-                pass
+        # 检查 model_index.json 存在即认为是 zimage
+        if (path / "model_index.json").exists():
+            return "zimage"
         return None
 
 def create_model_detector(model_type: str, model_path: Union[str, Path]) -> ModelDetector:

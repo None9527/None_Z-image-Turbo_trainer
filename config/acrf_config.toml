@@ -15,8 +15,16 @@ output_dir = "output/acrf_experiment_v1"
 # 推荐值: 10 (默认), 4 (快速实验), 20 (高质量)
 turbo_steps = 10
 
-# 时间步 Shift 参数 (官方固定值 3.0)
+# 时间步 Shift 参数 (仅 use_dynamic_shift=false 时使用)
 shift = 3.0
+
+# === Dynamic Shift (与 Pipeline 保持一致) ===
+# 启用后会根据分辨率自动计算 shift（推荐开启）
+use_dynamic_shift = true
+base_seq_len = 256   # 基准序列长度 (对应 512x512)
+max_seq_len = 4096   # 最大序列长度 (对应 2048x2048)
+base_shift = 0.5     # 最小 shift
+max_shift = 1.15     # 最大 shift
 
 # 锚点抖动幅度 (建议 0.01-0.05)
 # 用于"增厚"流形，防止过拟合于精确的锚点
@@ -45,6 +53,13 @@ curvature_start_epoch = 0    # 从第 N 个 epoch 开始启用
 # 这样 CFG=1 仍然可以正常出图，无需提高 CFG
 # 推荐 0.1 (10%)
 drop_text_ratio = 0.1
+
+# === CFG Training (Classifier-Free Guidance 训练) ===
+# 启用后会以一定概率使用 CFG 模式训练（正/负 prompt 对）
+# 让模型学习区分有条件和无条件生成，显著提升生成质量控制
+cfg_training = false
+cfg_scale = 7.0              # CFG 训练使用的 guidance scale
+cfg_training_ratio = 0.5     # CFG 模式占比 (0.5 = 50% 步数使用 CFG)
 
 [lora]
 # LoRA Rank (维度)

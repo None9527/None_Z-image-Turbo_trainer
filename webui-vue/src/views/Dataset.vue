@@ -419,10 +419,9 @@
         <el-form-item label="模型类型">
           <el-select v-model="cacheModelType" placeholder="请选择模型类型">
             <el-option label="Z-Image" value="zimage" />
-            <el-option label="LongCat-Image" value="longcat" />
           </el-select>
           <div class="cache-model-hint">
-            <span>将使用对应模型的缓存脚本生成 {{ cacheModelType === 'zimage' ? '_zi.safetensors' : '_lc.safetensors' }} 格式的缓存文件</span>
+            <span>将使用 Z-Image 缓存脚本生成 _zi.safetensors 格式的缓存文件</span>
           </div>
         </el-form-item>
         <el-form-item label="选择缓存类型">
@@ -469,10 +468,9 @@
         <el-form-item label="模型类型">
           <el-select v-model="cacheModelType" placeholder="请选择模型类型">
             <el-option label="Z-Image" value="zimage" />
-            <el-option label="LongCat-Image" value="longcat" />
           </el-select>
           <div class="cache-model-hint">
-            <span>将清理 {{ cacheModelType === 'zimage' ? '_zi' : '_lc' }} 后缀的缓存文件</span>
+            <span>将清理 _zi 后缀的缓存文件</span>
           </div>
         </el-form-item>
         <el-form-item label="选择清理类型">

@@ -6,7 +6,7 @@ Usage:
     
 Examples:
     python verify_model.py ./zimage_models
-    python verify_model.py ./longcat_models meituan-longcat/LongCat-Image
+    python verify_model.py ./zimage_models Tongyi-MAI/Z-Image-Turbo
 """
 
 import sys
@@ -16,10 +16,9 @@ import hashlib
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 
-# 模型映射
+# 模型映射 (仅 Z-Image)
 MODEL_MAP = {
     "zimage": "Tongyi-MAI/Z-Image-Turbo",
-    "longcat": "meituan-longcat/LongCat-Image",
 }
 
 
@@ -173,7 +172,7 @@ def main():
         print("Usage: python verify_model.py <model_dir> [model_id]")
         print("\nExamples:")
         print("  python verify_model.py ./zimage_models")
-        print("  python verify_model.py ./longcat_models longcat")
+        print("  python verify_model.py ./zimage_models zimage")
         sys.exit(1)
     
     model_dir = Path(sys.argv[1])
@@ -191,11 +190,9 @@ def main():
         dir_name = model_dir.name.lower()
         if "zimage" in dir_name or "z-image" in dir_name:
             model_id = MODEL_MAP["zimage"]
-        elif "longcat" in dir_name:
-            model_id = MODEL_MAP["longcat"]
         else:
-            print("[ERROR] 无法推断模型类型，请指定 model_id")
-            sys.exit(1)
+            # 默认使用 zimage
+            model_id = MODEL_MAP["zimage"]
     
     result = verify_model(model_dir, model_id)
     

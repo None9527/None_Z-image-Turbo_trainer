@@ -1,0 +1,87 @@
+# Z-Image Omni 多图训练配置
+# ================================
+
+[model]
+# Transformer 模型路径
+dit = "/path/to/zimage_models/transformer"
+# VAE 模型路径
+vae = ""
+# 输出目录
+output_dir = "output/omni_experiment"
+
+[omni]
+# SigLIP Vision Encoder 路径
+# 推荐使用 google/siglip-so400m-patch14-384
+siglip = "google/siglip-so400m-patch14-384"
+# 最大条件图数量
+max_condition_images = 4
+# 是否冻结 SigLIP (推荐 True)
+freeze_siglip = true
+
+[lora]
+# LoRA Rank
+network_dim = 16
+# LoRA Alpha
+network_alpha = 16
+# 继续训练的 LoRA 路径 (可选)
+resume_lora = ""
+
+[acrf]
+# Turbo 步数
+turbo_steps = 10
+# 时间步 Shift
+shift = 3.0
+# 启用动态 Shift
+use_dynamic_shift = true
+# 锚点抖动幅度
+jitter_scale = 0.02
+# 启用 Turbo 模式
+enable_turbo = true
+
+[training]
+# 输出名称
+output_name = "zimage_omni"
+# 训练 Epoch 数
+num_train_epochs = 10
+# 学习率
+learning_rate = 1e-4
+# 梯度累积步数
+gradient_accumulation_steps = 4
+# Loss 权重
+lambda_l1 = 1.0
+lambda_cosine = 0.1
+# Min-SNR 加权
+snr_gamma = 5.0
+# 优化器
+optimizer_type = "AdamW8bit"
+weight_decay = 0.01
+
+[advanced]
+# 梯度裁剪
+max_grad_norm = 1.0
+# 梯度检查点
+gradient_checkpointing = true
+# 随机种子
+seed = 42
+# 保存间隔
+save_every_n_epochs = 1
+
+# ============ Dataset 配置 ============
+[dataset]
+# 批次大小 (Omni 显存占用较高，建议 batch_size=1)
+batch_size = 1
+# 是否打乱数据
+shuffle = true
+num_workers = 4
+# 缓存架构
+cache_arch = "zi_omni"
+
+# --- 数据集列表 ---
+[[dataset.sources]]
+# 缓存目录路径
+# 格式: conditions/ (多条件图目录), targets/ (目标图), metadata.jsonl
+cache_directory = "/path/to/omni_dataset"
+# 数据重复次数
+num_repeats = 10
+# 分辨率上限
+resolution_limit = 1024

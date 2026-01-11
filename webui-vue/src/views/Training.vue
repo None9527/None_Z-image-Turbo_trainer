@@ -412,11 +412,8 @@ function getDatasetName(path: string): string {
 }
 
 function getModelTypeLabel(type: string | undefined): string {
-  const labels: Record<string, string> = {
-    'zimage': '⚡ Z-Image',
-    'longcat': '🐱 LongCat'
-  }
-  return labels[type || 'zimage'] || '⚡ Z-Image'
+  // 仅支持 Z-Image
+  return '⚡ Z-Image'
 }
 
 function getEnabledLossLabel(training: any, acrf?: any): string {
@@ -959,11 +956,6 @@ onUnmounted(() => {
       
       &.zimage {
         background: linear-gradient(135deg, #667eea, #764ba2);
-        color: white;
-      }
-      
-      &.longcat {
-        background: linear-gradient(135deg, #f093fb, #f5576c);
         color: white;
       }
     }

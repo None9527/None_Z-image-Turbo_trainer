@@ -17,13 +17,12 @@ from core import state
 
 router = APIRouter(prefix="/api/dataset", tags=["dataset"])
 
-# 多模型缓存后缀配置
+# 多模型缓存后缀配置 (仅 Z-Image)
 CACHE_SUFFIXES = {
     "zimage": {"latent": "_zi.safetensors", "text": "_zi_te.safetensors", "latent_pattern": "*_zi.safetensors"},
-    "longcat": {"latent": "_lc.safetensors", "text": "_lc_te.safetensors", "latent_pattern": "*_lc.safetensors"},
 }
-ALL_LATENT_PATTERNS = ["*_zi.safetensors", "*_lc.safetensors"]
-ALL_TEXT_SUFFIXES = ["_zi_te.safetensors", "_lc_te.safetensors"]
+ALL_LATENT_PATTERNS = ["*_zi.safetensors"]
+ALL_TEXT_SUFFIXES = ["_zi_te.safetensors"]
 
 # 文件列表缓存（避免每次翻页都重新遍历）
 # 结构: {path: (files, total_size, timestamp)}
@@ -269,19 +268,9 @@ async def get_dataset_stats(request: DatasetScanRequest):
                 # 兼容格式: name_suffix
                 latent_zi_files.add(parts[0])
         
-        # LongCat latent 缓存
-        for f in path.rglob("*_lc.safetensors"):
-            stem = f.stem
-            parts = stem.rsplit('_', 2)
-            if len(parts) >= 3:
-                original_name = parts[0]
-                latent_lc_files.add(original_name)
-            elif len(parts) == 2:
-                latent_lc_files.add(parts[0])
-        
-        # latent 缓存数 = ZI 或 LC 缓存存在的图片数
-        latent_cached_names = latent_zi_files | latent_lc_files
-        print(f"[Stats] Latent cached: {len(latent_cached_names)} (ZI: {len(latent_zi_files)}, LC: {len(latent_lc_files)})")
+        # latent 缓存数 = ZI 缓存存在的图片数
+        latent_cached_names = latent_zi_files
+        print(f"[Stats] Latent cached: {len(latent_cached_names)} (ZI: {len(latent_zi_files)})")
         
         # 直接 glob 扫描 text 缓存文件数量
         text_zi_files = set()
@@ -294,14 +283,8 @@ async def get_dataset_stats(request: DatasetScanRequest):
                 original_name = stem[:-6]
                 text_zi_files.add(original_name)
         
-        for f in path.rglob("*_lc_te.safetensors"):
-            stem = f.stem
-            if stem.endswith("_lc_te"):
-                original_name = stem[:-6]
-                text_lc_files.add(original_name)
-        
-        text_cached_names = text_zi_files | text_lc_files
-        print(f"[Stats] Text cached: {len(text_cached_names)} (ZI: {len(text_zi_files)}, LC: {len(text_lc_files)})")
+        text_cached_names = text_zi_files
+        print(f"[Stats] Text cached: {len(text_cached_names)} (ZI: {len(text_zi_files)})")
         
         return {
             "totalCount": total_count,

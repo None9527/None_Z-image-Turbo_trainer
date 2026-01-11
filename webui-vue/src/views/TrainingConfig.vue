@@ -72,6 +72,24 @@
                 <el-tag v-if="model.tag" :type="(model.tagType as 'primary' | 'success' | 'warning' | 'info' | 'danger')" size="small">{{ model.tag }}</el-tag>
               </div>
             </div>
+            
+            <!-- 训练模式选择 -->
+            <div class="subsection-label" style="margin-top: 20px">训练模式</div>
+            <div class="model-type-cards training-mode-cards">
+              <div 
+                v-for="mode in trainingModes" 
+                :key="mode.value"
+                :class="['model-card', { active: config.training_mode === mode.value, disabled: mode.disabled }]"
+                @click="!mode.disabled && selectTrainingMode(mode.value)"
+              >
+                <div class="model-icon">{{ mode.icon }}</div>
+                <div class="model-info">
+                  <div class="model-name">{{ mode.label }}</div>
+                  <div class="model-desc">{{ mode.description }}</div>
+                </div>
+                <el-tag v-if="mode.tag" :type="(mode.tagType as 'primary' | 'success' | 'warning' | 'info' | 'danger')" size="small">{{ mode.tag }}</el-tag>
+              </div>
+            </div>
           </div>
         </el-collapse-item>
 
@@ -80,7 +98,7 @@
           <template #title>
             <div class="collapse-title">
               <el-icon><DataAnalysis /></el-icon>
-              <span>{{ config.model_type === 'zimage' ? 'Zimage 参数' : 'Longcat 参数' }}</span>
+              <span>Z-Image 参数</span>
             </div>
           </template>
           <div class="collapse-content">
@@ -131,37 +149,6 @@
               </div>
             </template>
 
-            <!-- ============ Longcat 特有参数 ============ -->
-            <template v-if="config.model_type === 'longcat'">
-              <div class="control-row">
-                <span class="label">
-                  动态 Shift
-                  <el-tooltip content="根据图像序列长度自动调整 shift 值，推荐开启" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-switch v-model="config.acrf.use_dynamic_shifting" />
-              </div>
-              <div class="control-row">
-                <span class="label">
-                  Base Shift
-                  <el-tooltip content="动态 shift 的基础值，对应小图（默认 0.5）" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-slider v-model="config.acrf.base_shift" :min="0.1" :max="2" :step="0.05" :show-tooltip="false" class="slider-flex" />
-                <el-input-number v-model="config.acrf.base_shift" :min="0.1" :max="2" :step="0.05" controls-position="right" class="input-fixed" />
-              </div>
-              <div class="control-row">
-                <span class="label">
-                  Max Shift
-                  <el-tooltip content="动态 shift 的最大值，对应大图（默认 1.15）" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-slider v-model="config.acrf.max_shift" :min="0.5" :max="3" :step="0.05" :show-tooltip="false" class="slider-flex" />
-                <el-input-number v-model="config.acrf.max_shift" :min="0.5" :max="3" :step="0.05" controls-position="right" class="input-fixed" />
-              </div>
             </template>
           </div>
         </el-collapse-item>
@@ -248,24 +235,6 @@
                   </el-tooltip>
                 </span>
                 <el-switch v-model="config.lora.train_adaln" />
-              </div>
-              <div class="control-row" v-if="config.model_type === 'longcat'">
-                <span class="label">
-                  训练 Norm 层
-                  <el-tooltip content="训练 norm1.linear 和 norm1_context.linear" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-switch v-model="config.lora.train_norm" />
-              </div>
-              <div class="control-row" v-if="config.model_type === 'longcat'">
-                <span class="label">
-                  训练单流层
-                  <el-tooltip content="训练单流 Transformer 块 (proj_mlp, proj_out)" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-switch v-model="config.lora.train_single_stream" />
               </div>
             </template>
           </div>
@@ -1017,17 +986,60 @@ const availableModels = ref<Array<{
     tag: '推荐',
     tagType: 'success',
     disabled: false
+  }
+])
+
+// 训练模式列表
+const trainingModes = ref<Array<{
+  value: string
+  label: string
+  icon: string
+  description: string
+  tag: string
+  tagType: TagType
+  disabled: boolean
+}>>([
+  {
+    value: 'text2img',
+    label: 'Text2Img',
+    icon: '✏️',
+    description: '文本到图像生成基础训练',
+    tag: '推荐',
+    tagType: 'success',
+    disabled: false
   },
   {
-    value: 'longcat',
-    label: 'LongCat-Image',
-    icon: '🐱',
-    description: '基于 FLUX 架构，高质量生成',
-    tag: '新',
+    value: 'controlnet',
+    label: 'ControlNet',
+    icon: '🎛️',
+    description: '边缘/深度/姿态等条件控制训练',
+    tag: '',
+    tagType: 'info',
+    disabled: false
+  },
+  {
+    value: 'img2img',
+    label: 'Img2Img',
+    icon: '🔄',
+    description: '图像风格转换/修复训练',
+    tag: '',
+    tagType: 'info',
+    disabled: false
+  },
+  {
+    value: 'omni',
+    label: 'Omni',
+    icon: '🌌',
+    description: 'SigLIP 多图条件训练',
+    tag: '高级',
     tagType: 'warning',
     disabled: false
   }
 ])
+
+function selectTrainingMode(mode: string) {
+  config.value.training_mode = mode
+}
 
 // 模型类型显示
 const modelDisplayName = computed(() => {
@@ -1049,13 +1061,14 @@ function getDefaultConfig() {
   return {
     name: 'default',
     model_type: 'zimage',  // 模型类型
+    training_mode: 'text2img',  // 训练模式: text2img, controlnet, img2img, omni
     acrf: {
       enable_turbo: true,  // Turbo 开关
       turbo_steps: 10,
       // Zimage 参数
       shift: 3.0,
       jitter_scale: 0.02,
-      // Longcat 动态 shift 参数
+      // 动态 shift 参数
       use_dynamic_shifting: true,
       base_shift: 0.5,
       max_shift: 1.15,

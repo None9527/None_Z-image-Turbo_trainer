@@ -45,92 +45,21 @@ except ImportError:
 router = APIRouter(prefix="/api", tags=["generation"])
 
 
-def load_pipeline_with_adapter(model_type: str):
-    """使用抽象层加载本地模型 Pipeline"""
-    model_path = get_model_path(model_type, "base")
+def load_pipeline_with_adapter(model_type: str = "zimage"):
+    """使用抽象层加载本地模型 Pipeline (仅支持 Z-Image)"""
+    model_path = get_model_path("zimage", "base")
     
     if not model_path.exists():
         raise FileNotFoundError(f"Model not found at: {model_path}")
     
     dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float32
     
-    # 使用抽象层检测是否使用 local_files_only
-    if model_type == "zimage":
-        from diffusers import ZImagePipeline
-        pipe = ZImagePipeline.from_pretrained(
-            str(model_path),
-            torch_dtype=dtype,
-            local_files_only=True,  # 强制使用本地模型
-        )
-    elif model_type == "longcat":
-        try:
-            from longcat_image.pipelines.pipeline_longcat_image import LongCatImagePipeline
-            from longcat_image.models.longcat_image_dit import LongCatImageTransformer2DModel
-            from transformers import AutoTokenizer, AutoModel, AutoProcessor, CLIPVisionModelWithProjection, CLIPImageProcessor
-            from diffusers import FlowMatchEulerDiscreteScheduler, AutoencoderKL
-        except ImportError:
-            sys.path.append(str(PROJECT_ROOT / "src"))
-            from longcat_image.pipelines.pipeline_longcat_image import LongCatImagePipeline
-            from longcat_image.models.longcat_image_dit import LongCatImageTransformer2DModel
-            from transformers import AutoTokenizer, AutoModel, AutoProcessor, CLIPVisionModelWithProjection, CLIPImageProcessor
-            from diffusers import FlowMatchEulerDiscreteScheduler, AutoencoderKL
-
-        # 手动加载组件以确保完整性
-        scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(str(model_path), subfolder="scheduler")
-        
-        vae_path = get_model_path(model_type, "vae")
-        vae = AutoencoderKL.from_pretrained(str(vae_path), local_files_only=True).to(dtype=dtype)
-        
-        desc_path = get_model_path(model_type, "transformer")
-        transformer = LongCatImageTransformer2DModel.from_pretrained(str(desc_path), local_files_only=True).to(dtype=dtype)
-        
-        te_path = get_model_path(model_type, "text_encoder")
-        from transformers import Qwen2_5_VLForConditionalGeneration
-        text_encoder = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            str(te_path), 
-            local_files_only=True,
-            torch_dtype=dtype
-        )
-        
-        tokenizer_path = model_path / "tokenizer"
-        if not tokenizer_path.exists():
-            tokenizer_path = te_path
-            
-        tokenizer = AutoTokenizer.from_pretrained(str(tokenizer_path), local_files_only=True)
-        text_processor = AutoProcessor.from_pretrained(str(tokenizer_path), local_files_only=True)
-        
-        image_encoder_path = model_path / "image_encoder"
-        image_encoder = None
-        feature_extractor = None
-        
-        if image_encoder_path.exists():
-            try:
-                ie_path_str = str(image_encoder_path.resolve())
-                image_encoder = CLIPVisionModelWithProjection.from_pretrained(
-                    ie_path_str, 
-                    local_files_only=True
-                ).to(dtype=dtype)
-                feature_extractor = CLIPImageProcessor.from_pretrained(
-                    ie_path_str, 
-                    local_files_only=True
-                )
-            except Exception as e:
-                print(f"[WARN] Failed to load image_encoder from {image_encoder_path}: {e}")
-        else:
-            print(f"[INFO] image_encoder not found at {image_encoder_path}, running without it")
-
-        pipe = LongCatImagePipeline(
-            scheduler=scheduler,
-            vae=vae,
-            text_encoder=text_encoder,
-            tokenizer=tokenizer,
-            transformer=transformer,
-            text_processor=text_processor,
-            image_encoder=image_encoder,
-            feature_extractor=feature_extractor,
-        )
-    else:
-        raise ValueError(f"Unsupported model type: {model_type}")
+    from diffusers import ZImagePipeline
+    pipe = ZImagePipeline.from_pretrained(
+        str(model_path),
+        torch_dtype=dtype,
+        local_files_only=True,
+    )
     
     if torch.cuda.is_available():
         pipe.enable_model_cpu_offload()
@@ -140,29 +69,24 @@ def load_pipeline_with_adapter(model_type: str):
 
 @router.get("/generation/models")
 async def get_available_models():
-    """获取可用的生成模型列表"""
-    models = []
+    """获取可用的生成模型列表 (仅 Z-Image)"""
+    model_path = get_model_path("zimage", "base")
+    model_info = {
+        "type": "zimage",
+        "name": "Z-Image Turbo",
+        "path": str(model_path),
+        "exists": model_path.exists(),
+        "loaded": state.get_pipeline("zimage") is not None,
+    }
     
-    for model_type in ["zimage", "longcat"]:
-        model_path = get_model_path(model_type, "base")
-        model_info = {
-            "type": model_type,
-            "name": "Z-Image Turbo" if model_type == "zimage" else "LongCat Image",
-            "path": str(model_path),
-            "exists": model_path.exists(),
-            "loaded": state.get_pipeline(model_type) is not None,
-        }
-        
-        if model_path.exists():
-            components = ["vae", "text_encoder", "transformer", "scheduler"]
-            model_info["components"] = {}
-            for comp in components:
-                comp_path = model_path / comp
-                model_info["components"][comp] = comp_path.exists()
-        
-        models.append(model_info)
+    if model_path.exists():
+        components = ["vae", "text_encoder", "transformer", "scheduler"]
+        model_info["components"] = {}
+        for comp in components:
+            comp_path = model_path / comp
+            model_info["components"][comp] = comp_path.exists()
     
-    return {"models": models}
+    return {"models": [model_info]}
 
 
 @router.get("/loras")

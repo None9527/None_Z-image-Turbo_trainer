@@ -20,7 +20,6 @@ from models import (
     auto_detect_adapter,
     register_adapter,
     ZImageAdapter,
-    LongCatAdapter,
 )
 
 # 发出弃用警告
@@ -38,5 +37,4 @@ __all__ = [
     "auto_detect_adapter",
     "register_adapter",
     "ZImageAdapter",
-    "LongCatAdapter",
 ]

@@ -22,17 +22,12 @@
           </el-button>
         </div>
         
-        <!-- 快速状态概览 -->
+        <!-- 快速状态概览 (仅 Z-Image) -->
         <div class="quick-status" v-if="abstractLayerStatus">
-          <el-descriptions :column="2" size="small" border>
+          <el-descriptions :column="1" size="small" border>
             <el-descriptions-item label="Z-Image状态">
               <el-tag :type="getAbstractStatusType('zimage')" size="small">
                 {{ getAbstractStatusText('zimage') }}
-              </el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item label="LongCat状态">
-              <el-tag :type="getAbstractStatusType('longcat')" size="small">
-                {{ getAbstractStatusText('longcat') }}
               </el-tag>
             </el-descriptions-item>
           </el-descriptions>

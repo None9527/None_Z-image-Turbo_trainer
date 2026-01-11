@@ -269,10 +269,9 @@ const router = useRouter()
 const systemStore = useSystemStore()
 const wsStore = useWebSocketStore()
 
-// 多模型支持
+// 多模型支持 (仅 Z-Image)
 const modelTypes = ref([
-  { value: 'zimage', label: 'Z-Image', icon: '⚡' },
-  { value: 'longcat', label: 'LongCat', icon: '🐱' }
+  { value: 'zimage', label: 'Z-Image', icon: '⚡' }
 ])
 
 const selectedModelType = ref('zimage')
@@ -280,18 +279,13 @@ const loadingModel = ref(false)
 
 // 每个模型的状态
 const modelStatusMap = ref<Record<string, any>>({
-  zimage: { exists: false, details: null, summary: null, path: '' },
-  longcat: { exists: false, details: null, summary: null, path: '' }
+  zimage: { exists: false, details: null, summary: null, path: '' }
 })
 
 const currentModelStatus = computed(() => modelStatusMap.value[selectedModelType.value] || { exists: false, details: null, summary: null })
 
 const currentModelName = computed(() => {
-  const names: Record<string, string> = {
-    'zimage': 'Z-Image-Turbo',
-    'longcat': 'LongCat-Image'
-  }
-  return names[selectedModelType.value] || selectedModelType.value
+  return 'Z-Image-Turbo'
 })
 
 const startingDownload = ref(false)

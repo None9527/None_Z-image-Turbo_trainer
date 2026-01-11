@@ -24,7 +24,7 @@ def get_default_config():
     """Get default training configuration"""
     return {
         "name": "default",
-        # 模型类型：zimage, longcat, flux (未来支持)
+        # 模型类型：zimage (仅支持)
         "model_type": "zimage",
         "acrf": {
             "turbo_steps": 10,
@@ -35,7 +35,7 @@ def get_default_config():
             "snr_floor": 0.1,
             # 是否使用锚点采样
             "use_anchor": True,
-            # 动态 shift (LongCat 专用)
+            # 动态 shift
             "use_dynamic_shifting": True
         },
         "network": {
@@ -270,31 +270,26 @@ async def get_training_presets():
     ]
     return {"presets": presets}
 
-def get_cache_suffixes(model_type: str) -> tuple:
+def get_cache_suffixes(model_type: str = "zimage") -> tuple:
     """获取模型对应的缓存文件后缀
     
     Args:
-        model_type: 模型类型 (zimage, longcat)
+        model_type: 模型类型 (仅支持 zimage)
     
     Returns:
-        (latent_suffix_pattern, text_suffix): 
-        - latent_suffix_pattern: latent缓存的glob模式 (如 "_*_zi.safetensors")
-        - text_suffix: text缓存的后缀 (如 "_zi_te.safetensors")
+        (latent_suffix_pattern, text_suffix)
     """
-    suffixes = {
-        "zimage": ("_*_zi.safetensors", "_zi_te.safetensors"),
-        "longcat": ("_*_lc.safetensors", "_lc_te.safetensors"),
-    }
-    return suffixes.get(model_type, ("_*_zi.safetensors", "_zi_te.safetensors"))
+    # 固定返回 zimage 后缀
+    return ("_*_zi.safetensors", "_zi_te.safetensors")
 
 
     
 def check_dataset_cache(config: Dict[str, Any], model_type: str = "zimage") -> Dict[str, Any]:
-    """检查数据集缓存状态（支持多模型）
+    """检查数据集缓存状态
     
     Args:
         config: 训练配置
-        model_type: 模型类型 (zimage, longcat, flux)
+        model_type: 模型类型 (仅支持 zimage)
     """
     dataset_cfg = config.get("dataset", {})
     datasets = dataset_cfg.get("datasets", [])
@@ -433,15 +428,8 @@ async def start_training(config: Dict[str, Any]):
         gpu_ids = config.get("advanced", {}).get("gpu_ids", "")  # 如 "0,1,2"
         
         # 根据模型类型选择对应的训练脚本
-        if model_type == "zimage":
-            # Z-Image 使用 AC-RF V2 训练脚本 (重构优化版)
-            train_script = PROJECT_ROOT / "scripts" / "train_zimage_v2.py"
-        elif model_type == "longcat":
-            # LongCat-Image 使用独立训练脚本
-            train_script = PROJECT_ROOT / "scripts" / "train_longcat.py"
-        else:
-            # 其他模型（未来扩展）
-            raise HTTPException(status_code=400, detail=f"不支持的模型类型: {model_type}")
+        # Z-Image 使用 AC-RF V2 训练脚本
+        train_script = PROJECT_ROOT / "scripts" / "train_zimage_v2.py"
         
         # 构建 accelerate 参数
         accelerate_args = [
@@ -497,12 +485,11 @@ async def start_training(config: Dict[str, Any]):
             parse_func=parse_training_progress
         )
         
-        model_name = {"zimage": "Z-Image", "longcat": "LongCat-Image", "flux": "FLUX"}.get(model_type, model_type)
-        state.add_log(f"{model_name} 训练进程已启动 (PID: {state.training_process.pid})", "success")
+        state.add_log(f"Z-Image 训练进程已启动 (PID: {state.training_process.pid})", "success")
         
         return {
             "success": True,
-            "message": f"{model_name} 训练已启动",
+            "message": "Z-Image 训练已启动",
             "pid": state.training_process.pid,
             "config_path": str(config_path),
             "model_type": model_type
@@ -515,11 +502,11 @@ async def start_training(config: Dict[str, Any]):
 
 def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zimage") -> str:
     """
-    将前端配置转换为训练 TOML 格式（支持多模型）
+    将前端配置转换为训练 TOML 格式
     
     Args:
         config: 前端配置
-        model_type: 模型类型 (zimage, longcat, flux)
+        model_type: 模型类型 (仅支持 zimage)
     
     Returns:
         TOML 配置字符串
@@ -529,13 +516,10 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
     dataset_cfg = config.get("dataset", {})
     datasets = dataset_cfg.get("datasets", [])
     
-    model_names = {"zimage": "Z-Image", "longcat": "LongCat-Image", "flux": "FLUX"}
-    model_name = model_names.get(model_type, model_type)
     
     toml_lines = [
-        f"# {model_name} 训练配置 (自动生成)",
+        "# Z-Image 训练配置 (自动生成)",
         f"# 生成时间: {datetime.now().isoformat()}",
-        f"# 模型类型: {model_type}",
         "",
         "[model]",
         f'model_type = "{model_type}"',

@@ -178,6 +178,351 @@ class ZImageLatentDataset(Dataset):
         }
 
 
+class ControlNetDataset(Dataset):
+    """
+    Dataset for ControlNet training with pre-cached latents and control images.
+    Cache format: {name}_{WxH}_zi_controlnet.safetensors
+    """
+    
+    def __init__(
+        self,
+        datasets: List[Dict],
+        max_sequence_length: int = 512,
+        cache_arch: str = "zi",
+    ):
+        super().__init__()
+        
+        self.max_sequence_length = max_sequence_length
+        self.cache_arch = cache_arch
+        
+        self.latent_pattern = f"*_{cache_arch}_controlnet.safetensors"
+        self.te_suffix = f"_{cache_arch}_te.safetensors"
+        
+        self.cache_files = []
+        self.resolutions = []
+        
+        for ds_config in datasets:
+            cache_dir = Path(ds_config['cache_directory'])
+            repeats = ds_config.get('num_repeats', 1)
+            
+            logger.info(f"Loading ControlNet dataset from: {cache_dir}")
+            
+            files, res_list = self._load_dataset(cache_dir)
+            
+            if repeats > 1:
+                files = files * repeats
+                res_list = res_list * repeats
+            
+            self.cache_files.extend(files)
+            self.resolutions.extend(res_list)
+        
+        if len(self.cache_files) == 0:
+            raise ValueError("No valid ControlNet cache files found")
+            
+        logger.info(f"ControlNet dataset: {len(self.cache_files)} samples")
+    
+    def _load_dataset(self, cache_dir: Path):
+        files = []
+        resolutions = []
+        
+        latent_files = list(cache_dir.glob(self.latent_pattern))
+        
+        for latent_path in latent_files:
+            # Parse resolution from filename
+            parts = latent_path.stem.split('_')
+            res = (1024, 1024)
+            for part in parts:
+                if 'x' in part and part.replace('x', '').isdigit():
+                    try:
+                        w, h = map(int, part.split('x'))
+                        res = (h, w)
+                        break
+                    except:
+                        pass
+            
+            # Find text encoder cache
+            base_name = parts[0]
+            te_path = cache_dir / f"{base_name}{self.te_suffix}"
+            
+            if te_path.exists():
+                files.append((latent_path, te_path))
+                resolutions.append(res)
+        
+        return files, resolutions
+    
+    def __len__(self) -> int:
+        return len(self.cache_files)
+    
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        latent_path, te_path = self.cache_files[idx]
+        
+        # Load combined cache file (latent + control_image)
+        data = load_file(str(latent_path))
+        
+        latent_key = next((k for k in data.keys() if k.startswith('latents_')), None)
+        if latent_key is None:
+            raise ValueError(f"No latent key found in {latent_path}")
+        latents = data[latent_key]
+        
+        control_image = data.get('control_image', None)
+        if control_image is None:
+            raise ValueError(f"No control_image found in {latent_path}")
+        
+        # Load text encoder output
+        te_data = load_file(str(te_path))
+        vl_embed_key = next((k for k in te_data.keys() if 'vl_embed' in k), None)
+        if vl_embed_key is None:
+            raise ValueError(f"No vl_embed key found in {te_path}")
+        vl_embed = te_data[vl_embed_key]
+        
+        # Truncate/pad sequence
+        seq_len = vl_embed.shape[0]
+        if seq_len > self.max_sequence_length:
+            vl_embed = vl_embed[:self.max_sequence_length]
+        elif seq_len < self.max_sequence_length:
+            pad_len = self.max_sequence_length - seq_len
+            vl_embed = torch.nn.functional.pad(vl_embed, (0, 0, 0, pad_len))
+        
+        return {
+            'latents': latents,
+            'vl_embed': vl_embed,
+            'control_image': control_image,
+        }
+
+
+class Img2ImgDataset(Dataset):
+    """
+    Dataset for Img2Img training with pre-cached source and target latents.
+    Cache format: {name}_{WxH}_zi_img2img.safetensors
+    """
+    
+    def __init__(
+        self,
+        datasets: List[Dict],
+        max_sequence_length: int = 512,
+        cache_arch: str = "zi",
+    ):
+        super().__init__()
+        
+        self.max_sequence_length = max_sequence_length
+        self.cache_arch = cache_arch
+        
+        self.latent_pattern = f"*_{cache_arch}_img2img.safetensors"
+        self.te_suffix = f"_{cache_arch}_te.safetensors"
+        
+        self.cache_files = []
+        self.resolutions = []
+        
+        for ds_config in datasets:
+            cache_dir = Path(ds_config['cache_directory'])
+            repeats = ds_config.get('num_repeats', 1)
+            
+            logger.info(f"Loading Img2Img dataset from: {cache_dir}")
+            
+            files, res_list = self._load_dataset(cache_dir)
+            
+            if repeats > 1:
+                files = files * repeats
+                res_list = res_list * repeats
+            
+            self.cache_files.extend(files)
+            self.resolutions.extend(res_list)
+        
+        if len(self.cache_files) == 0:
+            raise ValueError("No valid Img2Img cache files found")
+            
+        logger.info(f"Img2Img dataset: {len(self.cache_files)} samples")
+    
+    def _load_dataset(self, cache_dir: Path):
+        files = []
+        resolutions = []
+        
+        latent_files = list(cache_dir.glob(self.latent_pattern))
+        
+        for latent_path in latent_files:
+            parts = latent_path.stem.split('_')
+            res = (1024, 1024)
+            for part in parts:
+                if 'x' in part and part.replace('x', '').isdigit():
+                    try:
+                        w, h = map(int, part.split('x'))
+                        res = (h, w)
+                        break
+                    except:
+                        pass
+            
+            base_name = parts[0]
+            te_path = cache_dir / f"{base_name}{self.te_suffix}"
+            
+            if te_path.exists():
+                files.append((latent_path, te_path))
+                resolutions.append(res)
+        
+        return files, resolutions
+    
+    def __len__(self) -> int:
+        return len(self.cache_files)
+    
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        latent_path, te_path = self.cache_files[idx]
+        
+        # Load combined cache file (target + source latents)
+        data = load_file(str(latent_path))
+        
+        target_key = next((k for k in data.keys() if k.startswith('target_latents_')), None)
+        source_key = next((k for k in data.keys() if k.startswith('source_latents_')), None)
+        
+        if target_key is None or source_key is None:
+            raise ValueError(f"Missing target or source latents in {latent_path}")
+        
+        target_latents = data[target_key]
+        source_latents = data[source_key]
+        
+        # Load text encoder output
+        te_data = load_file(str(te_path))
+        vl_embed_key = next((k for k in te_data.keys() if 'vl_embed' in k), None)
+        if vl_embed_key is None:
+            raise ValueError(f"No vl_embed key found in {te_path}")
+        vl_embed = te_data[vl_embed_key]
+        
+        seq_len = vl_embed.shape[0]
+        if seq_len > self.max_sequence_length:
+            vl_embed = vl_embed[:self.max_sequence_length]
+        elif seq_len < self.max_sequence_length:
+            pad_len = self.max_sequence_length - seq_len
+            vl_embed = torch.nn.functional.pad(vl_embed, (0, 0, 0, pad_len))
+        
+        return {
+            'latents': target_latents,  # 用于训练的目标
+            'source_latents': source_latents,  # 用于 img2img 的源
+            'vl_embed': vl_embed,
+        }
+
+
+class OmniDataset(Dataset):
+    """
+    Dataset for Omni multi-image training.
+    Cache format: 
+      - {name}_{WxH}_zi.safetensors (target latent)
+      - {name}_zi_siglip.safetensors (condition SigLIP features)
+      - {name}_zi_te.safetensors (text embedding)
+    """
+    
+    def __init__(
+        self,
+        datasets: List[Dict],
+        max_sequence_length: int = 512,
+        cache_arch: str = "zi",
+        condition_cache_dir: str = None,
+    ):
+        super().__init__()
+        
+        self.max_sequence_length = max_sequence_length
+        self.cache_arch = cache_arch
+        self.condition_cache_dir = Path(condition_cache_dir) if condition_cache_dir else None
+        
+        self.latent_pattern = f"*_{cache_arch}.safetensors"
+        self.te_suffix = f"_{cache_arch}_te.safetensors"
+        self.siglip_suffix = f"_{cache_arch}_siglip.safetensors"
+        
+        self.cache_files = []
+        self.resolutions = []
+        
+        for ds_config in datasets:
+            cache_dir = Path(ds_config['cache_directory'])
+            repeats = ds_config.get('num_repeats', 1)
+            
+            logger.info(f"Loading Omni dataset from: {cache_dir}")
+            
+            files, res_list = self._load_dataset(cache_dir)
+            
+            if repeats > 1:
+                files = files * repeats
+                res_list = res_list * repeats
+            
+            self.cache_files.extend(files)
+            self.resolutions.extend(res_list)
+        
+        if len(self.cache_files) == 0:
+            raise ValueError("No valid Omni cache files found")
+            
+        logger.info(f"Omni dataset: {len(self.cache_files)} samples")
+    
+    def _load_dataset(self, cache_dir: Path):
+        files = []
+        resolutions = []
+        
+        # 只匹配标准 latent 文件 (排除 _controlnet, _img2img 等)
+        latent_files = [f for f in cache_dir.glob(self.latent_pattern) 
+                       if not any(x in f.stem for x in ['controlnet', 'img2img', 'siglip'])]
+        
+        for latent_path in latent_files:
+            parts = latent_path.stem.split('_')
+            res = (1024, 1024)
+            for part in parts:
+                if 'x' in part and part.replace('x', '').isdigit():
+                    try:
+                        w, h = map(int, part.split('x'))
+                        res = (h, w)
+                        break
+                    except:
+                        pass
+            
+            base_name = parts[0]
+            te_path = cache_dir / f"{base_name}{self.te_suffix}"
+            
+            # 查找 SigLIP 特征 (可选)
+            siglip_dir = self.condition_cache_dir or cache_dir
+            siglip_path = siglip_dir / f"{base_name}{self.siglip_suffix}"
+            
+            if te_path.exists():
+                files.append((latent_path, te_path, siglip_path if siglip_path.exists() else None))
+                resolutions.append(res)
+        
+        return files, resolutions
+    
+    def __len__(self) -> int:
+        return len(self.cache_files)
+    
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        latent_path, te_path, siglip_path = self.cache_files[idx]
+        
+        # Load target latent
+        latent_data = load_file(str(latent_path))
+        latent_key = next((k for k in latent_data.keys() if k.startswith('latents_')), None)
+        if latent_key is None:
+            raise ValueError(f"No latent key found in {latent_path}")
+        latents = latent_data[latent_key]
+        
+        # Load text encoder output
+        te_data = load_file(str(te_path))
+        vl_embed_key = next((k for k in te_data.keys() if 'vl_embed' in k), None)
+        if vl_embed_key is None:
+            raise ValueError(f"No vl_embed key found in {te_path}")
+        vl_embed = te_data[vl_embed_key]
+        
+        seq_len = vl_embed.shape[0]
+        if seq_len > self.max_sequence_length:
+            vl_embed = vl_embed[:self.max_sequence_length]
+        elif seq_len < self.max_sequence_length:
+            pad_len = self.max_sequence_length - seq_len
+            vl_embed = torch.nn.functional.pad(vl_embed, (0, 0, 0, pad_len))
+        
+        result = {
+            'latents': latents,
+            'vl_embed': vl_embed,
+        }
+        
+        # Load SigLIP features if available
+        if siglip_path and siglip_path.exists():
+            siglip_data = load_file(str(siglip_path))
+            siglip_feats = siglip_data.get('siglip_feats', None)
+            if siglip_feats is not None:
+                result['siglip_feats'] = siglip_feats
+        
+        return result
+
+
 class BucketBatchSampler(torch.utils.data.Sampler):
     """
     支持分桶的 Batch Sampler。

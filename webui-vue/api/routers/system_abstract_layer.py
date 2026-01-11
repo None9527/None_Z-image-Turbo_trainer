@@ -11,7 +11,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from core.config import get_model_path
 from src.models.model_detector import (
     create_model_detector,
-    ModelStatus, ZImageDetector, LongCatDetector
+    ModelStatus, ZImageDetector
 )
 from src.models.model_downloader import (
     create_model_downloader, get_model_download_info, DownloadStatus,
@@ -61,12 +61,9 @@ async def auto_detect_model_type(path: Optional[str] = None):
         if path:
             model_path = Path(path)
         else:
-            # 尝试检测默认路径
-            for model_type in ["zimage", "longcat"]:
-                model_path = get_model_path(model_type, "base")
-                if model_path.exists():
-                    break
-            else:
+            # 尝试检测默认路径 (仅 zimage)
+            model_path = get_model_path("zimage", "base")
+            if not model_path.exists():
                 return {
                     "success": False,
                     "error": "未找到模型路径"

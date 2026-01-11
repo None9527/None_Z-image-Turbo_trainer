@@ -139,6 +139,139 @@ def process_image(
     save_file(sd, str(output_file))
 
 
+def process_controlnet_pair(
+    target_path: Path,
+    control_path: Path,
+    vae,
+    resolution: int,
+    output_dir: Path,
+    device,
+    dtype=None,
+    input_root: Path = None,
+) -> None:
+    """处理 ControlNet 配对：目标图 + 条件图"""
+    import torch
+    import numpy as np
+    from safetensors.torch import save_file
+    
+    if dtype is None:
+        dtype = torch.bfloat16
+    
+    # 处理目标图 (编码为 latent)
+    target_img = Image.open(target_path).convert('RGB')
+    target_img = resize_image(target_img, resolution)
+    w, h = target_img.size
+    
+    target_array = np.array(target_img).astype(np.float32) / 255.0
+    target_tensor = torch.from_numpy(target_array).permute(2, 0, 1).unsqueeze(0)
+    target_tensor = target_tensor * 2.0 - 1.0
+    target_tensor = target_tensor.to(device=device, dtype=dtype)
+    
+    with torch.no_grad():
+        target_latent = vae.encode(target_tensor).latent_dist.sample()
+    
+    scaling_factor = getattr(vae.config, 'scaling_factor', 0.3611)
+    shift_factor = getattr(vae.config, 'shift_factor', 0.1159)
+    target_latent = (target_latent - shift_factor) * scaling_factor
+    target_latent = target_latent.cpu()
+    
+    # 处理条件图 (保持为 tensor，不编码)
+    control_img = Image.open(control_path).convert('RGB')
+    control_img = control_img.resize((w, h), Image.LANCZOS)  # 调整到与目标图相同大小
+    
+    control_array = np.array(control_img).astype(np.float32) / 255.0
+    control_tensor = torch.from_numpy(control_array).permute(2, 0, 1)  # (3, H, W)
+    
+    # 计算输出路径
+    if input_root:
+        try:
+            rel_path = target_path.relative_to(input_root)
+            target_dir = output_dir / rel_path.parent
+        except ValueError:
+            target_dir = output_dir
+    else:
+        target_dir = output_dir
+        
+    target_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 保存
+    name = target_path.stem
+    F, H, W = 1, target_latent.shape[2], target_latent.shape[3]
+    dtype_str = "bf16" if dtype == torch.bfloat16 else "fp16"
+    
+    output_file = target_dir / f"{name}_{w}x{h}_{ARCHITECTURE}_controlnet.safetensors"
+    sd = {
+        f"latents_{F}x{H}x{W}_{dtype_str}": target_latent.squeeze(0),
+        "control_image": control_tensor,
+    }
+    save_file(sd, str(output_file))
+
+
+def process_img2img_pair(
+    target_path: Path,
+    source_path: Path,
+    vae,
+    resolution: int,
+    output_dir: Path,
+    device,
+    dtype=None,
+    input_root: Path = None,
+) -> None:
+    """处理 Img2Img 配对：目标图 + 源图 (都编码为 latent)"""
+    import torch
+    import numpy as np
+    from safetensors.torch import save_file
+    
+    if dtype is None:
+        dtype = torch.bfloat16
+    
+    def encode_image(image_path):
+        img = Image.open(image_path).convert('RGB')
+        img = resize_image(img, resolution)
+        w, h = img.size
+        
+        img_array = np.array(img).astype(np.float32) / 255.0
+        img_tensor = torch.from_numpy(img_array).permute(2, 0, 1).unsqueeze(0)
+        img_tensor = img_tensor * 2.0 - 1.0
+        img_tensor = img_tensor.to(device=device, dtype=dtype)
+        
+        with torch.no_grad():
+            latent = vae.encode(img_tensor).latent_dist.sample()
+        
+        scaling_factor = getattr(vae.config, 'scaling_factor', 0.3611)
+        shift_factor = getattr(vae.config, 'shift_factor', 0.1159)
+        latent = (latent - shift_factor) * scaling_factor
+        return latent.cpu(), w, h
+    
+    # 编码两张图
+    target_latent, w, h = encode_image(target_path)
+    source_latent, _, _ = encode_image(source_path)
+    
+    # 计算输出路径
+    if input_root:
+        try:
+            rel_path = target_path.relative_to(input_root)
+            target_dir = output_dir / rel_path.parent
+        except ValueError:
+            target_dir = output_dir
+    else:
+        target_dir = output_dir
+        
+    target_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 保存
+    name = target_path.stem
+    F, H, W = 1, target_latent.shape[2], target_latent.shape[3]
+    dtype_str = "bf16" if dtype == torch.bfloat16 else "fp16"
+    
+    output_file = target_dir / f"{name}_{w}x{h}_{ARCHITECTURE}_img2img.safetensors"
+    sd = {
+        f"target_latents_{F}x{H}x{W}_{dtype_str}": target_latent.squeeze(0),
+        f"source_latents_{F}x{H}x{W}_{dtype_str}": source_latent.squeeze(0),
+    }
+    save_file(sd, str(output_file))
+
+
 def worker_process(gpu_id: int, image_paths: List[Path], args, output_dir: Path, total_count: int, shared_counter, counter_lock):
     """单个 GPU worker 进程"""
     import os
@@ -205,7 +338,25 @@ def main():
     parser.add_argument("--skip_existing", action="store_true", help="Skip existing cache files")
     parser.add_argument("--num_gpus", type=int, default=0, help="Number of GPUs (0=auto detect)")
     
+    # 新增: 训练模式 (影响缓存格式)
+    parser.add_argument("--mode", type=str, default="text2img", 
+                       choices=["text2img", "controlnet", "img2img", "omni"],
+                       help="Training mode: text2img, controlnet, img2img, omni")
+    
+    # ControlNet 模式参数
+    parser.add_argument("--control_dir", type=str, default=None,
+                       help="ControlNet condition image directory (for controlnet mode)")
+    
+    # Img2Img 模式参数
+    parser.add_argument("--source_dir", type=str, default=None,
+                       help="Source image directory (for img2img mode)")
+    
+    # Omni 模式参数
+    parser.add_argument("--condition_dirs", type=str, default=None,
+                       help="Comma-separated condition image directories (for omni mode)")
+    
     args = parser.parse_args()
+
     
     # 创建输出目录
     output_dir = Path(args.output_dir)

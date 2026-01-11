@@ -1,0 +1,81 @@
+# Z-Image ControlNet 训练配置
+# ================================
+
+[model]
+# Transformer 模型路径
+dit = "/path/to/zimage_models/transformer"
+# 输出目录
+output_dir = "output/controlnet_experiment"
+
+[controlnet]
+# ControlNet 模型路径 (可选，留空则从 Transformer 初始化)
+path = ""
+# 控制类型: canny, depth, pose, normal, lineart, seg, multi
+control_type = "canny"
+# ControlNet 条件强度 (推荐 0.5-1.0)
+conditioning_scale = 0.75
+# 是否冻结 Transformer (推荐 True)
+freeze_transformer = true
+# 是否同时训练 Transformer LoRA
+train_lora = false
+
+[acrf]
+# Turbo 步数
+turbo_steps = 10
+# 时间步 Shift (仅 use_dynamic_shift=false 时使用)
+shift = 3.0
+# 启用动态 Shift (推荐)
+use_dynamic_shift = true
+# 锚点抖动幅度
+jitter_scale = 0.02
+
+[training]
+# 输出名称
+output_name = "zimage_controlnet"
+# 训练 Epoch 数
+num_train_epochs = 10
+# 学习率 (ControlNet 推荐较低)
+learning_rate = 5e-5
+# 梯度累积步数
+gradient_accumulation_steps = 4
+# Loss 权重
+lambda_l1 = 1.0
+lambda_cosine = 0.1
+# Min-SNR 加权
+snr_gamma = 5.0
+# 优化器
+optimizer_type = "AdamW8bit"
+weight_decay = 0.01
+# 学习率调度器
+lr_scheduler = "cosine_with_restarts"
+lr_warmup_steps = 100
+lr_num_cycles = 1
+
+[advanced]
+# 梯度裁剪
+max_grad_norm = 1.0
+# 梯度检查点
+gradient_checkpointing = true
+# 随机种子
+seed = 42
+# 保存间隔
+save_every_n_epochs = 1
+
+# ============ Dataset 配置 ============
+[dataset]
+# 批次大小
+batch_size = 1
+# 是否打乱数据
+shuffle = true
+num_workers = 4
+# 缓存架构
+cache_arch = "zi_controlnet"
+
+# --- 数据集列表 ---
+[[dataset.sources]]
+# 缓存目录路径 (需包含 source/ 和 target/ 子目录)
+cache_directory = "/path/to/controlnet_dataset"
+# 数据重复次数
+num_repeats = 10
+# 分辨率上限
+resolution_limit = 1024

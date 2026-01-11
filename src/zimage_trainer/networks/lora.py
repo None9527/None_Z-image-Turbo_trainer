@@ -44,14 +44,17 @@ ZIMAGE_ADALN_NAMES = [
 ]
 
 # 排除模式 - 这些层默认不训练
+# 与 ZTuner 官方一致: 只训练主 Transformer 的 to_q,to_k,to_v,to_out,w1,w2,w3
 EXCLUDE_PATTERNS = [
-    r".*embedder.*",       # Embedding 层 - 会破坏输入空间
-    r".*pad_token.*",      # Padding token
-    r".*norm.*",           # 所有归一化层 - 易发散
-    r".*adaLN.*",          # AdaLN 调制层 - 默认排除
-    r".*refiner.*",        # Refiner 模块 - 条件预处理
-    r".*final_layer.*",    # 输出层 - 会破坏像素分布
+    r".*embedder.*",           # Embedding 层 - 会破坏输入空间
+    r".*pad_token.*",          # Padding token
+    r".*norm.*",               # 所有归一化层 - 易发散
+    r".*adaLN.*",              # AdaLN 调制层 - 默认排除
+    r".*refiner.*",            # Refiner 模块 - ZTuner 官方不训练
+    r".*final_layer.*",        # 输出层 - 会破坏像素分布
 ]
+
+
 
 
 class LoRAModule(nn.Module):

@@ -22,6 +22,35 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def calculate_shift(
+    image_seq_len: int,
+    base_seq_len: int = 256,
+    max_seq_len: int = 4096,
+    base_shift: float = 0.5,
+    max_shift: float = 1.15,
+) -> float:
+    """
+    计算基于分辨率的动态 shift 值。
+    
+    与 Pipeline 中的 calculate_shift 保持一致。
+    根据 image_seq_len 线性插值计算 shift 值。
+    
+    Args:
+        image_seq_len: 图像序列长度 (latent_h // 2) * (latent_w // 2)
+        base_seq_len: 基准序列长度 (默认 256，对应 512x512 输入)
+        max_seq_len: 最大序列长度 (默认 4096，对应 2048x2048 输入)
+        base_shift: 基准 shift 值 (默认 0.5)
+        max_shift: 最大 shift 值 (默认 1.15)
+        
+    Returns:
+        计算得到的 shift 值
+    """
+    m = (max_shift - base_shift) / (max_seq_len - base_seq_len)
+    b = base_shift - m * base_seq_len
+    mu = image_seq_len * m + b
+    return mu
+
+
 class ACRFTrainer:
     """
     Anchor-Constrained Rectified Flow Trainer
@@ -33,39 +62,66 @@ class ACRFTrainer:
         self,
         num_train_timesteps: int = 1000,
         turbo_steps: int = 10,
-        shift: float = 3.0,  # Z-Image 官方值
+        shift: float = 3.0,  # Z-Image 官方值（仅 use_dynamic_shift=False 时使用）
+        use_dynamic_shift: bool = True,  # 是否使用动态 shift（与 Pipeline 保持一致）
+        base_seq_len: int = 256,  # 动态 shift 基准序列长度
+        max_seq_len: int = 4096,  # 动态 shift 最大序列长度
+        base_shift: float = 0.5,  # 动态 shift 基准值
+        max_shift: float = 1.15,  # 动态 shift 最大值
     ):
         """
         Args:
             num_train_timesteps: 训练时间步总数 (默认 1000)
             turbo_steps: Turbo 模型步数/锚点数量 (默认 10)
-            shift: 时间步 shift 参数 (Z-Image 官方值 3.0)
+            shift: 固定 shift 值 (仅 use_dynamic_shift=False 时使用)
+            use_dynamic_shift: 是否启用动态 shift（推荐开启，与 Pipeline 保持一致）
+            base_seq_len: 动态 shift 基准序列长度 (默认 256)
+            max_seq_len: 动态 shift 最大序列长度 (默认 4096)
+            base_shift: 动态 shift 基准值 (默认 0.5)
+            max_shift: 动态 shift 最大值 (默认 1.15)
         """
         self.num_train_timesteps = num_train_timesteps
         self.turbo_steps = turbo_steps
         self.shift = shift
+        self.use_dynamic_shift = use_dynamic_shift
+        self.base_seq_len = base_seq_len
+        self.max_seq_len = max_seq_len
+        self.base_shift = base_shift
+        self.max_shift = max_shift
         
         # 计算锚点 (离散采样点)
         # 对于 4-step Turbo: 我们需要在关键时间点训练
         # Z-Image scheduler 从 sigma=1.0 逐步降到 sigma=0.0
+        # 注意：初始锚点使用默认 shift，实际训练时会根据 latent 尺寸重新计算
         self._compute_anchors()
         
         logger.info(f"[START] AC-RF Trainer 初始化完成")
+        logger.info(f"   Dynamic Shift: {use_dynamic_shift}")
+        if use_dynamic_shift:
+            logger.info(f"   Shift 范围: {base_shift} ~ {max_shift}")
+        else:
+            logger.info(f"   固定 Shift: {shift}")
         logger.info(f"   锚点 sigmas: {self.anchor_sigmas.tolist()}")
         logger.info(f"   对应 timesteps: {self.anchor_timesteps.tolist()}")
     
-    def _compute_anchors(self):
+    def _compute_anchors(self, shift_override: float = None):
         """
         从真实 Scheduler 获取离散锚点
         
         使用 FlowMatchEulerDiscreteScheduler 确保与推理时完全一致
+        
+        Args:
+            shift_override: 可选的 shift 覆盖值（用于动态 shift）
         """
         from diffusers import FlowMatchEulerDiscreteScheduler
+        
+        # 使用覆盖值或默认值
+        effective_shift = shift_override if shift_override is not None else self.shift
         
         # 创建与 Z-Image 完全一致的 scheduler
         scheduler = FlowMatchEulerDiscreteScheduler(
             num_train_timesteps=self.num_train_timesteps,
-            shift=self.shift,
+            shift=effective_shift,
         )
         
         # 调用 set_timesteps 获取真实锚点
@@ -82,9 +138,9 @@ class ACRFTrainer:
         self.anchor_timesteps = timesteps
         self.anchor_sigmas = sigmas[:-1]  # 排除最后的 0
         
-        logger.info(f"[OK] 从真实 Scheduler 加载锚点")
-        logger.info(f"   Timesteps: {self.anchor_timesteps.tolist()}")
-        logger.info(f"   Sigmas: {self.anchor_sigmas.tolist()}")
+        logger.debug(f"[OK] 从真实 Scheduler 加载锚点 (shift={effective_shift:.3f})")
+        logger.debug(f"   Timesteps: {self.anchor_timesteps.tolist()}")
+        logger.debug(f"   Sigmas: {self.anchor_sigmas.tolist()}")
 
     def sample_batch(
         self, 
@@ -98,7 +154,7 @@ class ACRFTrainer:
         为当前 batch 采样训练数据
         
         Args:
-            latents: 原图 latents (x_0)
+            latents: 原图 latents (x_0), shape: (B, C, H, W)
             noise: 噪声 (x_1)
             jitter_scale: 锚点抖动幅度
             stratified: 是否使用分层采样（推荐开启，减少 loss 波动）
@@ -112,8 +168,25 @@ class ACRFTrainer:
             target_velocity: 预测目标 (v)
         """
         batch_size = latents.shape[0]
+        _, _, latent_h, latent_w = latents.shape
         device = latents.device
         dtype = latents.dtype
+        
+        # 如果启用动态 shift，根据 latent 尺寸计算 shift 并重新计算锚点
+        if self.use_dynamic_shift:
+            image_seq_len = (latent_h // 2) * (latent_w // 2)
+            dynamic_shift = calculate_shift(
+                image_seq_len,
+                self.base_seq_len,
+                self.max_seq_len,
+                self.base_shift,
+                self.max_shift,
+            )
+            # 重新计算锚点（使用动态 shift）
+            self._compute_anchors(shift_override=dynamic_shift)
+            effective_shift = dynamic_shift
+        else:
+            effective_shift = self.shift
         
         if use_anchor:
             # ========== Turbo 模式：锚点采样 ==========
@@ -142,9 +215,9 @@ class ACRFTrainer:
             # 全时间步 [0, 1] 均匀采样，标准 Flow Matching / Rectified Flow
             sampled_sigmas = torch.rand(batch_size, device=device, dtype=dtype)
             
-            # 应用 Z-Image shift 变换
-            if self.shift > 0:
-                sampled_sigmas = (sampled_sigmas * self.shift) / (1 + (self.shift - 1) * sampled_sigmas)
+            # 应用 Z-Image shift 变换（使用动态或固定 shift）
+            if effective_shift > 0:
+                sampled_sigmas = (sampled_sigmas * effective_shift) / (1 + (effective_shift - 1) * sampled_sigmas)
             
             sampled_sigmas = sampled_sigmas.clamp(0.001, 0.999)
         

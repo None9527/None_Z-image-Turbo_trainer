@@ -1,9 +1,8 @@
 """
-多模型下载脚本 - 支持总进度显示
+模型下载脚本 - 支持总进度显示
 
 支持:
 - Z-Image-Turbo (Tongyi-MAI/Z-Image-Turbo)
-- LongCat-Image-Dev (meituan-longcat/LongCat-Image-Dev)
 
 Usage:
     python download_model.py <local_dir> [model_id]
@@ -11,7 +10,6 @@ Usage:
 Examples:
     python download_model.py ./zimage_models                          # 默认下载 Z-Image
     python download_model.py ./zimage_models Tongyi-MAI/Z-Image-Turbo
-    python download_model.py ./longcat_models meituan-longcat/LongCat-Image-Dev
 """
 
 
@@ -21,20 +19,17 @@ import time
 import threading
 from pathlib import Path
 
-# 模型映射
+# 模型映射 (仅 Z-Image)
 MODEL_MAP = {
     "zimage": "Tongyi-MAI/Z-Image-Turbo",
-    "longcat": "meituan-longcat/LongCat-Image-Dev",
     # 别名
     "z-image": "Tongyi-MAI/Z-Image-Turbo",
     "z-image-turbo": "Tongyi-MAI/Z-Image-Turbo",
-    "longcat-image": "meituan-longcat/LongCat-Image-Dev",
 }
 
 # 预估模型大小 (GB)
 MODEL_SIZES = {
     "Tongyi-MAI/Z-Image-Turbo": 32.0,
-    "meituan-longcat/LongCat-Image-Dev": 35.0,
 }
 
 
@@ -138,7 +133,6 @@ def main():
         print("Usage: python download_model.py <local_dir> [model_id]")
         print("\nSupported models:")
         print("  - zimage (default): Tongyi-MAI/Z-Image-Turbo (~32GB)")
-        print("  - longcat: meituan-longcat/LongCat-Image-Dev (~35GB)")
         sys.exit(1)
     
     model_dir = Path(sys.argv[1])

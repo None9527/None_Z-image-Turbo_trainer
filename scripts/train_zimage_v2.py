@@ -128,6 +128,26 @@ def parse_args():
     parser.add_argument("--drop_text_ratio", type=float, default=0.0,
         help="丢弃文本条件的概率 (保持低 CFG 能力)，推荐 0.1")
     
+    # CFG Training (Classifier-Free Guidance 训练)
+    parser.add_argument("--cfg_training", type=bool, default=False,
+        help="启用 CFG 训练 (正/负 prompt 对训练，与 Pipeline 一致)")
+    parser.add_argument("--cfg_scale", type=float, default=7.0,
+        help="CFG 训练使用的 guidance scale")
+    parser.add_argument("--cfg_training_ratio", type=float, default=0.5,
+        help="CFG 训练模式的比例 (0.5 = 50% 步数使用 CFG 模式)")
+    
+    # Dynamic Shift (与 Pipeline 保持一致)
+    parser.add_argument("--use_dynamic_shift", type=bool, default=True,
+        help="使用动态 shift (基于分辨率自动计算，与 Pipeline 一致)")
+    parser.add_argument("--base_seq_len", type=int, default=256,
+        help="动态 shift 基准序列长度")
+    parser.add_argument("--max_seq_len", type=int, default=4096,
+        help="动态 shift 最大序列长度")
+    parser.add_argument("--base_shift", type=float, default=0.5,
+        help="动态 shift 基准值")
+    parser.add_argument("--max_shift", type=float, default=1.15,
+        help="动态 shift 最大值")
+    
     # Memory optimization
     parser.add_argument("--blocks_to_swap", type=int, default=0)
     parser.add_argument("--block_swap_enabled", type=bool, default=False)
@@ -273,6 +293,18 @@ def parse_args():
                                           training_cfg.get("enable_timestep_aware_loss", args.enable_timestep_aware_loss))
         args.timestep_high_threshold = acrf_cfg.get("timestep_high_threshold", args.timestep_high_threshold)
         args.timestep_low_threshold = acrf_cfg.get("timestep_low_threshold", args.timestep_low_threshold)
+        
+        # CFG Training (Classifier-Free Guidance 训练)
+        args.cfg_training = acrf_cfg.get("cfg_training", args.cfg_training)
+        args.cfg_scale = acrf_cfg.get("cfg_scale", args.cfg_scale)
+        args.cfg_training_ratio = acrf_cfg.get("cfg_training_ratio", args.cfg_training_ratio)
+        
+        # Dynamic Shift (与 Pipeline 保持一致)
+        args.use_dynamic_shift = acrf_cfg.get("use_dynamic_shift", args.use_dynamic_shift)
+        args.base_seq_len = acrf_cfg.get("base_seq_len", args.base_seq_len)
+        args.max_seq_len = acrf_cfg.get("max_seq_len", args.max_seq_len)
+        args.base_shift = acrf_cfg.get("base_shift", args.base_shift)
+        args.max_shift = acrf_cfg.get("max_shift", args.max_shift)
         
         # LoRA 高级选项
         lora_cfg = config.get("lora", {})
@@ -454,12 +486,35 @@ def main():
     # 4. AC-RF Trainer
     # =========================================================================
     logger.info("\n[3/7] 初始化 AC-RF Trainer...")
+    
+    # 解析 use_dynamic_shift 参数 (可能是字符串)
+    use_dynamic_shift = getattr(args, 'use_dynamic_shift', True)
+    if isinstance(use_dynamic_shift, str):
+        use_dynamic_shift = use_dynamic_shift.lower() in ('true', '1', 'yes')
+    use_dynamic_shift = bool(use_dynamic_shift)
+    
     acrf_trainer = ACRFTrainer(
         num_train_timesteps=1000,
         turbo_steps=args.turbo_steps,
         shift=args.shift,
+        use_dynamic_shift=use_dynamic_shift,
+        base_seq_len=getattr(args, 'base_seq_len', 256),
+        max_seq_len=getattr(args, 'max_seq_len', 4096),
+        base_shift=getattr(args, 'base_shift', 0.5),
+        max_shift=getattr(args, 'max_shift', 1.15),
     )
     acrf_trainer.verify_setup()
+    
+    # CFG 训练配置
+    cfg_training = getattr(args, 'cfg_training', False)
+    if isinstance(cfg_training, str):
+        cfg_training = cfg_training.lower() in ('true', '1', 'yes')
+    cfg_training = bool(cfg_training)
+    cfg_scale = getattr(args, 'cfg_scale', 7.0)
+    cfg_training_ratio = getattr(args, 'cfg_training_ratio', 0.5)
+    
+    if cfg_training:
+        logger.info(f"  [CFG] CFG 训练已启用: scale={cfg_scale}, ratio={cfg_training_ratio}")
     
     # =========================================================================
     # 5. Loss Functions
@@ -645,19 +700,58 @@ def main():
                 timesteps_normalized = (1000 - timesteps) / 1000.0
                 timesteps_normalized = timesteps_normalized.to(dtype=weight_dtype)
                 
-                # Forward pass
-                model_pred_list = transformer(
-                    x=model_input_list,
-                    t=timesteps_normalized,
-                    cap_feats=vl_embed,
-                )[0]
+                # === CFG 训练模式 ===
+                # 以一定概率使用 CFG 模式: 同时计算正向和负向（空 prompt）的输出
+                # 这样模型可以学习区分有条件和无条件生成
+                use_cfg_mode = cfg_training and torch.rand(1).item() < cfg_training_ratio
                 
-                # Stack outputs
-                model_pred = torch.stack(model_pred_list, dim=0)
-                model_pred = model_pred.squeeze(2)
-                
-                # Z-Image output is negated
-                model_pred = -model_pred
+                if use_cfg_mode:
+                    # CFG 模式: 双倍 batch (正向 + 负向)
+                    # 负向 prompt = 空 embedding (与 Pipeline 一致)
+                    negative_embed = [torch.zeros_like(v) for v in vl_embed]
+                    
+                    # 合并输入: [positive + negative]
+                    cfg_input_list = model_input_list + model_input_list  # 双倍输入
+                    cfg_timesteps = timesteps_normalized.repeat(2)
+                    cfg_embed = vl_embed + negative_embed  # 正向 + 负向
+                    
+                    # Forward pass (CFG 模式)
+                    cfg_pred_list = transformer(
+                        x=cfg_input_list,
+                        t=cfg_timesteps,
+                        cap_feats=cfg_embed,
+                    )[0]
+                    
+                    # 分离正向和负向输出
+                    pos_pred_list = cfg_pred_list[:batch_size]
+                    neg_pred_list = cfg_pred_list[batch_size:]
+                    
+                    pos_pred = torch.stack(pos_pred_list, dim=0).squeeze(2)
+                    neg_pred = torch.stack(neg_pred_list, dim=0).squeeze(2)
+                    
+                    # Z-Image output is negated
+                    pos_pred = -pos_pred
+                    neg_pred = -neg_pred
+                    
+                    # CFG 组合: pred = pos + scale * (pos - neg)
+                    model_pred = pos_pred + cfg_scale * (pos_pred - neg_pred)
+                    
+                    # 目标也需要调整 (CFG 训练的目标是让组合后的输出接近原始目标)
+                    # 简化处理: 仍使用原始 target_velocity
+                else:
+                    # 标准模式 (无 CFG)
+                    model_pred_list = transformer(
+                        x=model_input_list,
+                        t=timesteps_normalized,
+                        cap_feats=vl_embed,
+                    )[0]
+                    
+                    # Stack outputs
+                    model_pred = torch.stack(model_pred_list, dim=0)
+                    model_pred = model_pred.squeeze(2)
+                    
+                    # Z-Image output is negated
+                    model_pred = -model_pred
                 
                 # =========================================================
                 # Compute Losses
