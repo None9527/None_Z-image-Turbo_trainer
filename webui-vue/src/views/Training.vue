@@ -421,8 +421,8 @@ function getEnabledLossLabel(training: any, acrf?: any): string {
   const parts: string[] = []
   
   // 只有当权重 > 0 时才显示对应损失
-  if (training.lambda_l1 \u0026\u0026 training.lambda_l1 > 0) parts.push('L1')
-  if (training.lambda_cosine \u0026\u0026 training.lambda_cosine > 0) parts.push('Cosine')
+  if (training.lambda_l1 && training.lambda_l1 > 0) parts.push('L1')
+  if (training.lambda_cosine && training.lambda_cosine > 0) parts.push('Cosine')
   if (training.enable_freq) parts.push('Freq')
   if (training.enable_style) parts.push('Style')
   if (acrf?.raft_mode) parts.push('L2')
