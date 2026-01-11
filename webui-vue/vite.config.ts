@@ -12,50 +12,62 @@ export default defineConfig(({ mode }) => {
   const BACKEND_PORT = parseInt(env.API_PORT || '9198')
 
   return {
-  plugins: [
-    vue(),
-    AutoImport({
-      resolvers: [ElementPlusResolver()],
-      imports: ['vue', 'vue-router', 'pinia'],
-      dts: 'src/auto-imports.d.ts',
-    }),
-    Components({
-      resolvers: [ElementPlusResolver()],
-      dts: 'src/components.d.ts',
-    }),
-  ],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
-    },
-  },
-  server: {
-    port: FRONTEND_PORT,
-    proxy: {
-      '/api': {
-        target: `http://127.0.0.1:${BACKEND_PORT}`,
-        changeOrigin: true,
-      },
-      '/ws': {
-        target: `ws://127.0.0.1:${BACKEND_PORT}`,
-        ws: true,
-      },
-      '/outputs': {
-        target: `http://127.0.0.1:${BACKEND_PORT}`,
-        changeOrigin: true,
+    plugins: [
+      vue(),
+      AutoImport({
+        resolvers: [ElementPlusResolver()],
+        imports: ['vue', 'vue-router', 'pinia'],
+        dts: 'src/auto-imports.d.ts',
+      }),
+      Components({
+        resolvers: [ElementPlusResolver()],
+        dts: 'src/components.d.ts',
+      }),
+    ],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, 'src'),
       },
     },
-  },
-  build: {
-    outDir: 'dist',
-    assetsDir: 'assets',
-  },
-  css: {
-    preprocessorOptions: {
-      scss: {
-        api: 'modern-compiler',
+    server: {
+      port: FRONTEND_PORT,
+      proxy: {
+        '/api': {
+          target: `http://127.0.0.1:${BACKEND_PORT}`,
+          changeOrigin: true,
+        },
+        '/ws': {
+          target: `ws://127.0.0.1:${BACKEND_PORT}`,
+          ws: true,
+        },
+        '/outputs': {
+          target: `http://127.0.0.1:${BACKEND_PORT}`,
+          changeOrigin: true,
+        },
       },
     },
-  },
-}})
+    build: {
+      outDir: 'dist',
+      assetsDir: 'assets',
+      chunkSizeWarningLimit: 600,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            // 将大型依赖分离成独立 chunk
+            'vendor-vue': ['vue', 'vue-router', 'pinia'],
+            'vendor-element': ['element-plus', '@element-plus/icons-vue'],
+            'vendor-utils': ['axios', 'lodash-es'],
+          },
+        },
+      },
+    },
+    css: {
+      preprocessorOptions: {
+        scss: {
+          api: 'modern-compiler',
+        },
+      },
+    },
+  }
+})
 
