@@ -125,18 +125,7 @@
               <el-input-number v-model="config.acrf.turbo_steps" :min="1" :max="10" :step="1" controls-position="right" class="input-fixed" />
             </div>
 
-            <!-- Anchor & Jitter (Turbo 相关) -->
-            <div class="control-row">
-              <span class="label">
-                Use Anchor
-                <el-tooltip content="启用锚点时间步 (t=max)，增强一致性" placement="top">
-                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                </el-tooltip>
-              </span>
-              <el-switch v-model="config.acrf.use_anchor" />
-            </div>
-            
-            <div class="control-row">
+            <!-- Jitter (Turbo 相关) -->
               <span class="label">
                 Jitter Scale
                 <el-tooltip content="时间步抖动幅度，增加训练多样性。关闭 Turbo 时自动禁用" placement="top">
@@ -1137,7 +1126,6 @@ function getDefaultConfig() {
       // Min-SNR 加权参数（公用）
       snr_gamma: 5.0,
       snr_floor: 0.1,
-      use_anchor: true,
       // MSE/L2 混合模式参数
       raft_mode: false,
       free_stream_ratio: 0.3,
