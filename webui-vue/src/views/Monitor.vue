@@ -238,6 +238,28 @@ const smoothedLoss = computed(() => {
   return result
 })
 
+// TensorBoard风格的y轴范围计算（忽略outliers）
+const lossYAxisRange = computed(() => {
+  const data = progress.value.lossHistory
+  if (data.length === 0) return { min: 0, max: 1 }
+  
+  // 忽略前5%的数据（通常是训练初期的高值异常）
+  const skipCount = Math.max(1, Math.floor(data.length * 0.05))
+  const validData = data.slice(skipCount)
+  
+  if (validData.length === 0) return { min: 0, max: 1 }
+  
+  const min = Math.min(...validData)
+  const max = Math.max(...validData)
+  const range = max - min
+  
+  // 添加10%的边距，让曲线不贴边
+  return {
+    min: Math.max(0, min - range * 0.1),
+    max: max + range * 0.1
+  }
+})
+
 const lossChartOption = computed(() => ({
   ...baseChartConfig,
   xAxis: {
@@ -247,7 +269,9 @@ const lossChartOption = computed(() => ({
   yAxis: {
     ...baseChartConfig.yAxis,
     type: lossChartScale.value === 'log' ? 'log' : 'value',
-    min: (value: { min: number }) => Math.max(0, value.min * 0.9), // 稍微留点底边
+    // TensorBoard风格：自动缩放到有效数据范围
+    min: lossChartScale.value === 'log' ? undefined : lossYAxisRange.value.min,
+    max: lossChartScale.value === 'log' ? undefined : lossYAxisRange.value.max,
   },
   series: [
     {
