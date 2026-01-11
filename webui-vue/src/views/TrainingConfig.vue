@@ -126,15 +126,16 @@
             </div>
 
             <!-- Jitter (Turbo 相关) -->
-            <div class="control-row">
+            <!-- Jitter (Turbo 相关) -->
+            <div class="control-row" v-if="config.acrf.enable_turbo">
               <span class="label">
                 Jitter Scale
                 <el-tooltip content="时间步抖动幅度，增加训练多样性。关闭 Turbo 时自动禁用" placement="top">
                   <el-icon class="help-icon"><QuestionFilled /></el-icon>
                 </el-tooltip>
               </span>
-              <el-slider v-model="config.acrf.jitter_scale" :min="0" :max="0.1" :step="0.01" :show-tooltip="false" class="slider-flex" :disabled="!config.acrf.enable_turbo" />
-              <el-input-number v-model="config.acrf.jitter_scale" :min="0" :max="0.1" :step="0.01" controls-position="right" class="input-fixed" :disabled="!config.acrf.enable_turbo" />
+              <el-slider v-model="config.acrf.jitter_scale" :min="0" :max="0.1" :step="0.01" :show-tooltip="false" class="slider-flex" />
+              <el-input-number v-model="config.acrf.jitter_scale" :min="0" :max="0.1" :step="0.01" controls-position="right" class="input-fixed" />
             </div>
 
             <!-- ============ Zimage 特有参数 ============ -->
