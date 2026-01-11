@@ -969,12 +969,12 @@ const systemPaths = ref({
 type TagType = 'primary' | 'success' | 'warning' | 'info' | 'danger'
 
 const availableModels = ref<Array<{
-  value: string
-  label: string
-  icon: string
-  description: string
-  tag: string
-  tagType: TagType
+  value: string,
+  label: string,
+  icon: string,
+  description: string,
+  tag: string,
+  tagType: TagType,
   disabled: boolean
 }}>([
   {
