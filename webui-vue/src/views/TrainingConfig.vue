@@ -126,6 +126,7 @@
             </div>
 
             <!-- Jitter (Turbo 相关) -->
+            <div class="control-row">
               <span class="label">
                 Jitter Scale
                 <el-tooltip content="时间步抖动幅度，增加训练多样性。关闭 Turbo 时自动禁用" placement="top">
