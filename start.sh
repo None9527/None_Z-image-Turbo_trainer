@@ -189,9 +189,12 @@ echo -e "${GREEN}启动 TensorBoard...${NC}"
 if lsof -Pi :6006 -sTCP:LISTEN -t >/dev/null ; then
     echo -e "  端口 6006 被占用，跳过启动 TensorBoard"
 else
-    tensorboard --logdir "$LOG_DIR" --port 6006 --bind_all > /dev/null 2>&1 &
+    tensorboard --logdir "$LOG_DIR" --port 6006 --host 0.0.0.0 > /dev/null 2>&1 &
     TB_PID=$!
     echo -e "  地址:   ${CYAN}http://localhost:6006${NC}"
+    if [ -n "$LOCAL_IP" ] && [ "$LOCAL_IP" != "127.0.0.1" ]; then
+        echo -e "  局域网: ${CYAN}http://$LOCAL_IP:6006${NC}"
+    fi
 fi
 
 # 清理函数
