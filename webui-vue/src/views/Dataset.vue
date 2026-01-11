@@ -424,6 +424,22 @@
             <span>将使用 Z-Image 缓存脚本生成 _zi.safetensors 格式的缓存文件</span>
           </div>
         </el-form-item>
+        
+        <el-form-item label="训练模式">
+          <el-select v-model="cacheTrainingMode" placeholder="请选择训练模式">
+            <el-option label="Text2Img (标准)" value="text2img" />
+            <el-option label="ControlNet" value="controlnet" />
+            <el-option label="Img2Img" value="img2img" />
+            <el-option label="Omni (多图)" value="omni" />
+          </el-select>
+          <div class="cache-model-hint">
+            <span v-if="cacheTrainingMode === 'text2img'">标准 LoRA 训练，只需 latent 和 text 缓存</span>
+            <span v-else-if="cacheTrainingMode === 'controlnet'">ControlNet 训练，需要额外的条件图缓存</span>
+            <span v-else-if="cacheTrainingMode === 'img2img'">Img2Img 训练，需要源图和目标图 latent 配对</span>
+            <span v-else-if="cacheTrainingMode === 'omni'">多图条件训练，需要 SigLIP 特征缓存</span>
+          </div>
+        </el-form-item>
+        
         <el-form-item label="选择缓存类型">
           <el-checkbox-group v-model="cacheOptions">
             <el-checkbox label="latent">
@@ -436,9 +452,28 @@
               <span class="cache-path-hint" v-if="trainingStore.config.textEncoderPath">({{ trainingStore.config.textEncoderPath.split(/[/\\]/).pop() }})</span>
               <span class="cache-path-missing" v-else>(未配置Text Encoder)</span>
             </el-checkbox>
+            <!-- ControlNet 模式额外选项 -->
+            <el-checkbox label="control" v-if="cacheTrainingMode === 'controlnet'">
+              条件图缓存 (边缘/深度/姿态)
+            </el-checkbox>
+            <!-- Omni 模式额外选项 -->
+            <el-checkbox label="siglip" v-if="cacheTrainingMode === 'omni'">
+              SigLIP 特征缓存
+            </el-checkbox>
           </el-checkbox-group>
         </el-form-item>
+        
+        <!-- ControlNet 条件图目录 -->
+        <el-form-item label="条件图目录" v-if="cacheTrainingMode === 'controlnet' && cacheOptions.includes('control')">
+          <el-input v-model="cacheControlDir" placeholder="条件图像目录路径" />
+        </el-form-item>
+        
+        <!-- Img2Img 源图目录 -->
+        <el-form-item label="源图目录" v-if="cacheTrainingMode === 'img2img'">
+          <el-input v-model="cacheSourceDir" placeholder="源图像目录路径" />
+        </el-form-item>
       </el-form>
+
       
       <div class="cache-warning" v-if="!hasRequiredPaths">
         <el-icon><WarningFilled /></el-icon>
@@ -1061,6 +1096,9 @@ async function saveCaption() {
 const showCacheDialog = ref(false)
 const cacheOptions = ref<string[]>(['latent', 'text'])
 const cacheModelType = ref('zimage')  // 缓存模型类型
+const cacheTrainingMode = ref('text2img')  // 训练模式
+const cacheControlDir = ref('')  // ControlNet 条件图目录
+const cacheSourceDir = ref('')  // Img2Img 源图目录
 
 // 加载数据集列表（使用 Store 方法）
 async function loadLocalDatasets() {
