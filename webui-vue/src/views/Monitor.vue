@@ -238,12 +238,12 @@ const smoothedLoss = computed(() => {
   return result
 })
 
-// TensorBoard风格的y轴范围计算（忽略outliers）
+// TensorBoard风格的y轴范围计算（基于平滑曲线）
 const lossYAxisRange = computed(() => {
-  const data = progress.value.lossHistory
+  const data = smoothedLoss.value  // 使用平滑数据而非原始数据
   if (data.length === 0) return { min: 0, max: 1 }
   
-  // 忽略前5%的数据（通常是训练初期的高值异常）
+  // 忽略前5%的数据（训练初期仍可能有异常）
   const skipCount = Math.max(1, Math.floor(data.length * 0.05))
   const validData = data.slice(skipCount)
   
