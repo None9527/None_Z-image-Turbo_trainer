@@ -58,7 +58,7 @@
         <div class="chart-controls">
           <div class="smoothing-control">
             <span class="label">平滑: {{ smoothing }}</span>
-            <el-slider v-model="smoothing" :min="0" :max="0.999" :step="0.001" size="small" style="width: 100px; margin-right: 12px" />
+            <el-slider v-model="smoothing" :min="0" :max="0.99" :step="0.001" size="small" style="width: 100px; margin-right: 12px" />
           </div>
           <el-radio-group v-model="lossChartScale" size="small">
             <el-radio-button label="linear">线性</el-radio-button>
