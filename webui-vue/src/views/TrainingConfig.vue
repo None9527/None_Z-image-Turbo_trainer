@@ -47,49 +47,63 @@
     <el-card class="config-content-card glass-card" v-loading="loading">
       <el-collapse v-model="activeNames" class="config-collapse">
 
-        <!-- 1. 模型类型选择 -->
+        <!-- 1. 训练类型选择 -->
         <el-collapse-item name="model">
           <template #title>
             <div class="collapse-title">
               <el-icon><Cpu /></el-icon>
-              <span>模型类型</span>
-              <el-tag :type="(modelTagType as 'primary' | 'success' | 'warning' | 'info' | 'danger')" size="small" style="margin-left: 10px">{{ modelDisplayName }}</el-tag>
+              <span>训练类型</span>
+              <el-tag :type="trainingTypeTagType" size="small" style="margin-left: 10px">{{ trainingTypeDisplayName }}</el-tag>
             </div>
           </template>
           <div class="collapse-content">
+            <!-- 训练类型卡片：LoRA / Finetune / ControlNet -->
             <div class="model-type-cards">
               <div 
-                v-for="model in availableModels" 
-                :key="model.value"
-                :class="['model-card', { active: config.model_type === model.value, disabled: model.disabled }]"
-                @click="!model.disabled && selectModelType(model.value)"
+                v-for="type in trainingTypes" 
+                :key="type.value"
+                :class="['model-card', { active: config.training_type === type.value, disabled: type.disabled }]"
+                @click="!type.disabled && selectTrainingType(type.value)"
               >
-                <div class="model-icon">{{ model.icon }}</div>
+                <div class="model-icon">{{ type.icon }}</div>
                 <div class="model-info">
-                  <div class="model-name">{{ model.label }}</div>
-                  <div class="model-desc">{{ model.description }}</div>
+                  <div class="model-name">{{ type.label }}</div>
+                  <div class="model-desc">{{ type.description }}</div>
                 </div>
-                <el-tag v-if="model.tag" :type="(model.tagType as 'primary' | 'success' | 'warning' | 'info' | 'danger')" size="small">{{ model.tag }}</el-tag>
+                <el-tag v-if="type.tag" :type="type.tagType" size="small">{{ type.tag }}</el-tag>
               </div>
             </div>
             
-            <!-- 训练模式选择 -->
-            <div class="subsection-label" style="margin-top: 20px">训练模式</div>
-            <div class="model-type-cards training-mode-cards">
-              <div 
-                v-for="mode in trainingModes" 
-                :key="mode.value"
-                :class="['model-card', { active: config.training_mode === mode.value, disabled: mode.disabled }]"
-                @click="!mode.disabled && selectTrainingMode(mode.value)"
-              >
-                <div class="model-icon">{{ mode.icon }}</div>
-                <div class="model-info">
-                  <div class="model-name">{{ mode.label }}</div>
-                  <div class="model-desc">{{ mode.description }}</div>
+            <!-- 条件模式选择：仅在 LoRA / Finetune 时显示 -->
+            <template v-if="config.training_type !== 'controlnet'">
+              <div class="subsection-label" style="margin-top: 20px">条件模式</div>
+              <div class="model-type-cards training-mode-cards">
+                <div 
+                  v-for="mode in conditionModes" 
+                  :key="mode.value"
+                  :class="['model-card', { active: config.condition_mode === mode.value, disabled: mode.disabled }]"
+                  @click="!mode.disabled && selectConditionMode(mode.value)"
+                >
+                  <div class="model-icon">{{ mode.icon }}</div>
+                  <div class="model-info">
+                    <div class="model-name">{{ mode.label }}</div>
+                    <div class="model-desc">{{ mode.description }}</div>
+                  </div>
+                  <el-tag v-if="mode.tag" :type="mode.tagType" size="small">{{ mode.tag }}</el-tag>
                 </div>
-                <el-tag v-if="mode.tag" :type="(mode.tagType as 'primary' | 'success' | 'warning' | 'info' | 'danger')" size="small">{{ mode.tag }}</el-tag>
               </div>
-            </div>
+            </template>
+            
+            <!-- Finetune 显存警告 -->
+            <el-alert 
+              v-if="config.training_type === 'finetune'" 
+              type="warning" 
+              :closable="false" 
+              show-icon
+              style="margin-top: 16px"
+            >
+              全量微调需要 40GB+ 显存，请确认您的硬件支持
+            </el-alert>
           </div>
         </el-collapse-item>
 
@@ -138,8 +152,8 @@
               <el-input-number v-model="config.acrf.jitter_scale" :min="0" :max="0.1" :step="0.01" controls-position="right" class="input-fixed" />
             </div>
 
-            <!-- ============ Zimage 特有参数 ============ -->
-            <template v-if="config.model_type === 'zimage'">
+            <!-- ============ Z-Image 特有参数 ============ -->
+            <template>
               <div class="control-row">
                 <span class="label">
                   Dynamic Shift
@@ -265,7 +279,7 @@
               
               <!-- LoRA 高级选项 -->
               <div class="subsection-label">高级选项 (LoRA Targets)</div>
-              <div class="control-row" v-if="config.model_type === 'zimage'">
+              <div class="control-row">
                 <span class="label">
                   训练 AdaLN
                   <el-tooltip content="训练 AdaLN 调制层 (激进模式，可能导致过拟合)" placement="top">
@@ -1029,21 +1043,39 @@ interface ModelOption {
   disabled: boolean
 }
 
-const availableModels = ref<ModelOption[]>([
+// 训练类型列表：LoRA / Finetune / ControlNet
+const trainingTypes = ref<ModelOption[]>([
   {
-    value: 'zimage',
-    label: 'Z-Image',
-    icon: '⚡',
-    description: 'Z-Image LoRA 训练',
+    value: 'lora',
+    label: 'LoRA',
+    icon: '🔗',
+    description: '低秩适配器，主模型冻结，显存友好',
     tag: '推荐',
     tagType: 'success',
+    disabled: false
+  },
+  {
+    value: 'finetune',
+    label: 'Finetune',
+    icon: '🔥',
+    description: '解冻主模型全量训练，需40GB+显存',
+    tag: '高级',
+    tagType: 'warning',
+    disabled: false
+  },
+  {
+    value: 'controlnet',
+    label: 'ControlNet',
+    icon: '🎛️',
+    description: '训练独立控制网络（边缘/深度/姿态）',
+    tag: '',
+    tagType: 'info',
     disabled: false
   }
 ])
 
-
-// 训练模式列表
-const trainingModes = ref<Array<{
+// 条件模式列表（仅在LoRA/Finetune时可用）
+const conditionModes = ref<Array<{
   value: string
   label: string
   icon: string
@@ -1056,18 +1088,9 @@ const trainingModes = ref<Array<{
     value: 'text2img',
     label: 'Text2Img',
     icon: '✏️',
-    description: '文本到图像生成基础训练',
+    description: '纯文本到图像生成',
     tag: '推荐',
     tagType: 'success',
-    disabled: false
-  },
-  {
-    value: 'controlnet',
-    label: 'ControlNet',
-    icon: '🎛️',
-    description: '边缘/深度/姿态等条件控制训练',
-    tag: '',
-    tagType: 'info',
     disabled: false
   },
   {
@@ -1090,31 +1113,31 @@ const trainingModes = ref<Array<{
   }
 ])
 
-function selectTrainingMode(mode: string) {
-  config.value.training_mode = mode
+function selectTrainingType(type: string) {
+  config.value.training_type = type
 }
 
-// 模型类型显示
-const modelDisplayName = computed(() => {
-  const model = availableModels.value.find(m => m.value === config.value.model_type)
-  return model?.label || 'Z-Image'
-})
-
-const modelTagType = computed((): TagType => {
-  const model = availableModels.value.find(m => m.value === config.value.model_type)
-  return model?.tagType || 'primary'
-})
-
-function selectModelType(type: string) {
-  config.value.model_type = type
+function selectConditionMode(mode: string) {
+  config.value.condition_mode = mode
 }
+
+// 训练类型显示
+const trainingTypeDisplayName = computed(() => {
+  const type = trainingTypes.value.find(t => t.value === config.value.training_type)
+  return type?.label || 'LoRA'
+})
+
+const trainingTypeTagType = computed((): TagType => {
+  const type = trainingTypes.value.find(t => t.value === config.value.training_type)
+  return type?.tagType || 'success'
+})
 
 // 默认配置结构
 function getDefaultConfig() {
   return {
     name: 'default',
-    model_type: 'zimage',  // 模型类型
-    training_mode: 'text2img',  // 训练模式: text2img, controlnet, img2img, omni
+    training_type: 'lora',  // 训练类型: lora, finetune, controlnet
+    condition_mode: 'text2img',  // 条件模式: text2img, img2img, omni
     acrf: {
       enable_turbo: true,  // Turbo 开关
       turbo_steps: 10,
