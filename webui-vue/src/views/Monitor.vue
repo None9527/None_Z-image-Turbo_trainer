@@ -11,7 +11,7 @@
           placeholder="选择训练记录" 
           @change="loadRunData"
           :loading="loadingRuns"
-          style="width: 280px"
+          style="width: 380px"
         >
           <el-option 
             v-for="run in availableRuns" 
@@ -561,15 +561,18 @@ function formatTime(seconds: number): string {
       justify-content: space-between;
       align-items: center;
       width: 100%;
+      gap: var(--space-xl);
       
       .run-name {
         font-weight: 500;
+        flex: 1;
       }
       
       .run-time {
-        font-size: 0.75rem;
+        font-size: 0.8rem;
         color: var(--text-muted);
-        margin-left: var(--space-md);
+        white-space: nowrap;
+        opacity: 0.7;
       }
     }
     
