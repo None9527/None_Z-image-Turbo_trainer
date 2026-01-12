@@ -532,6 +532,27 @@ async function startTraining() {
     return
   }
   
+  // 验证输出名称
+  const outputName = currentConfig.value.training?.output_name?.trim()
+  if (!outputName) {
+    ElMessage.error('请先在配置页面填写输出名称')
+    return
+  }
+  
+  // 检查名称是否已存在（强制唯一）
+  try {
+    const runsRes = await axios.get('/api/training/runs')
+    const existingRuns = runsRes.data.runs || []
+    const exists = existingRuns.some((r: any) => r.name === outputName)
+    
+    if (exists) {
+      ElMessage.error(`训练记录 "${outputName}" 已存在，请修改输出名称后重试`)
+      return
+    }
+  } catch (e) {
+    console.warn('无法检查训练记录:', e)
+  }
+  
   isStarting.value = true
   hasCompleted.value = false
   

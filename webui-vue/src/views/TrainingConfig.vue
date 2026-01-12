@@ -1316,23 +1316,12 @@ async function saveCurrentConfig() {
     const exists = existingRuns.some((r: any) => r.name === outputName)
     
     if (exists) {
-      try {
-        await ElMessageBox.confirm(
-          `训练记录 "${outputName}" 已存在，继续使用此名称将覆盖原有日志数据。\n\n建议使用唯一名称以区分不同训练。`,
-          '名称已存在',
-          { 
-            confirmButtonText: '继续使用', 
-            cancelButtonText: '修改名称', 
-            type: 'warning' 
-          }
-        )
-      } catch {
-        // 用户选择修改名称
-        if (!activeNames.value.includes('training')) {
-          activeNames.value.push('training')
-        }
-        return
+      ElMessage.error(`训练记录 "${outputName}" 已存在，请使用唯一名称`)
+      // 展开训练设置面板
+      if (!activeNames.value.includes('training')) {
+        activeNames.value.push('training')
       }
+      return
     }
   } catch (e) {
     // API调用失败时不阻止保存
