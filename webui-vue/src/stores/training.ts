@@ -151,12 +151,18 @@ export const useTrainingStore = defineStore('training', () => {
     progress.value = { ...progress.value, ...data }
   }
 
+  /**
+   * @deprecated 已废弃 - 图表数据现在完全使用TensorBoard API
+   */
   function setHistory(lossHistory: number[], lrHistory: number[]) {
     // 从后端恢复完整的历史数据
     progress.value.lossHistory = lossHistory
     progress.value.lrHistory = lrHistory
   }
 
+  /**
+   * @deprecated 已废弃 - 图表数据现在完全使用TensorBoard API
+   */
   function appendHistory(loss?: number, lr?: number) {
     // 追加单个历史数据点（用于实时更新）
     if (loss !== undefined) {

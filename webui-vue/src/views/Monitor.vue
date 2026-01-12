@@ -1,8 +1,37 @@
 <template>
   <div class="monitor-page">
     <div class="page-header">
-      <h1 class="gradient-text">训练监控</h1>
-      <p class="subtitle">实时查看训练状态和曲线</p>
+      <div class="header-left">
+        <h1 class="gradient-text">训练监控</h1>
+        <p class="subtitle">实时查看训练状态和曲线</p>
+      </div>
+      <!-- 训练记录选择器 -->
+      <div class="run-selector">
+        <el-select 
+          v-model="selectedRun" 
+          placeholder="选择训练记录" 
+          size="small"
+          @change="loadRunData"
+          :loading="loadingRuns"
+        >
+          <el-option 
+            v-for="run in availableRuns" 
+            :key="run.name" 
+            :label="run.name" 
+            :value="run.name"
+          >
+            <span>{{ run.name }}</span>
+            <span class="run-time">{{ formatRunTime(run.start_time) }}</span>
+          </el-option>
+        </el-select>
+        <el-button 
+          size="small" 
+          :icon="Refresh" 
+          circle 
+          @click="refreshRuns"
+          :loading="loadingRuns"
+        />
+      </div>
     </div>
 
     <!-- 实时状态 -->
@@ -144,16 +173,128 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useTrainingStore } from '@/stores/training'
 import { useSystemStore } from '@/stores/system'
 import VChart from 'vue-echarts'
+import axios from 'axios'
+import { Refresh } from '@element-plus/icons-vue'
 
 const trainingStore = useTrainingStore()
 const systemStore = useSystemStore()
 
+// 图表控制
 const lossChartScale = ref<'linear' | 'log'>('linear')
 const smoothing = ref(0.99)
+
+// 训练记录选择
+interface TrainingRun {
+  name: string
+  start_time: string
+  logdir: string
+  event_files: number
+}
+
+const availableRuns = ref<TrainingRun[]>([])
+const selectedRun = ref('')
+const loadingRuns = ref(false)
+const historyLoss = ref<number[]>([])  // 从API加载的历史Loss
+const historyLr = ref<number[]>([])    // 从API加载的历史LR
+
+// 获取训练记录列表
+async function refreshRuns() {
+  loadingRuns.value = true
+  try {
+    const res = await axios.get('/api/training/runs')
+    availableRuns.value = res.data.runs || []
+    
+    // 如果有记录且未选择，自动选择最新的
+    if (availableRuns.value.length > 0 && !selectedRun.value) {
+      selectedRun.value = availableRuns.value[0].name
+      await loadRunData()
+    }
+  } catch (e) {
+    console.error('获取训练记录失败:', e)
+  } finally {
+    loadingRuns.value = false
+  }
+}
+
+// 加载指定训练记录的数据
+async function loadRunData() {
+  if (!selectedRun.value) return
+  
+  try {
+    const res = await axios.get('/api/training/all-scalars', {
+      params: { run: selectedRun.value }
+    })
+    
+    const scalars = res.data.scalars || {}
+    
+    // 提取 loss 数据
+    const lossData = scalars['train/loss'] || scalars['train/ema_loss'] || []
+    historyLoss.value = lossData.map((d: any) => d.value)
+    
+    // 提取 lr 数据
+    const lrData = scalars['train/learning_rate'] || []
+    historyLr.value = lrData.map((d: any) => d.value)
+  } catch (e) {
+    console.error('加载训练数据失败:', e)
+  }
+}
+
+// 格式化运行时间
+function formatRunTime(isoTime: string): string {
+  try {
+    const date = new Date(isoTime)
+    return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  } catch {
+    return ''
+  }
+}
+
+// 轮询定时器（训练中时定时刷新TensorBoard数据）
+let pollTimer: ReturnType<typeof setInterval> | null = null
+const POLL_INTERVAL = 5000  // 5秒轮询一次
+
+function startPolling() {
+  if (pollTimer) return
+  pollTimer = setInterval(async () => {
+    // 从当前训练对应的日志加载最新数据
+    await loadRunData()
+  }, POLL_INTERVAL)
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+// 监听训练状态，控制轮询
+watch(() => trainingStore.progress.isRunning, (running) => {
+  if (running) {
+    // 训练开始时，刷新训练记录列表并开始轮询
+    refreshRuns()
+    startPolling()
+  } else {
+    // 训练结束，停止轮询并刷新最终数据
+    stopPolling()
+    refreshRuns()
+  }
+}, { immediate: true })
+
+// 页面加载时获取训练记录
+onMounted(() => {
+  refreshRuns()
+})
+
+// 页面卸载时清理定时器
+onUnmounted(() => {
+  stopPolling()
+})
+
 // GPU 数据通过 WebSocket 实时更新到 systemStore，无需轮询
 
 const progress = computed(() => trainingStore.progress)
@@ -220,8 +361,13 @@ const itemStyle = {
   }
 }
 
+// 图表数据直接使用TensorBoard API数据
+const currentLossData = computed(() => historyLoss.value)
+
+const currentLrData = computed(() => historyLr.value)
+
 const smoothedLoss = computed(() => {
-  const data = progress.value.lossHistory
+  const data = currentLossData.value
   const smoothWeight = smoothing.value
   if (data.length === 0) return []
   
@@ -264,7 +410,7 @@ const lossChartOption = computed(() => ({
   ...baseChartConfig,
   xAxis: {
     ...baseChartConfig.xAxis,
-    data: progress.value.lossHistory.map((_, i) => i + 1)
+    data: currentLossData.value.map((_, i) => i + 1)
   },
   yAxis: {
     ...baseChartConfig.yAxis,
@@ -277,7 +423,7 @@ const lossChartOption = computed(() => ({
     {
       name: 'Original',
       type: 'line',
-      data: progress.value.lossHistory,
+      data: currentLossData.value,
       smooth: false,
       symbol: 'none',
       itemStyle: { color: 'rgba(0, 245, 255, 0.2)' },
@@ -317,13 +463,13 @@ const lrChartOption = computed(() => ({
   ...baseChartConfig,
   xAxis: {
     ...baseChartConfig.xAxis,
-    data: progress.value.lrHistory.map((_, i) => i + 1)
+    data: currentLrData.value.map((_, i) => i + 1)
   },
   series: [
     {
       name: 'Learning Rate',
       type: 'line',
-      data: progress.value.lrHistory,
+      data: currentLrData.value,
       smooth: true,
       symbol: 'none',
       lineStyle: {
@@ -363,15 +509,36 @@ function formatTime(seconds: number): string {
 
 .page-header {
   margin-bottom: var(--space-xl);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
   
-  h1 {
-    font-family: var(--font-display);
-    font-size: 2rem;
-    margin-bottom: var(--space-xs);
+  .header-left {
+    h1 {
+      font-family: var(--font-display);
+      font-size: 2rem;
+      margin-bottom: var(--space-xs);
+    }
+    
+    .subtitle {
+      color: var(--text-muted);
+    }
   }
   
-  .subtitle {
-    color: var(--text-muted);
+  .run-selector {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    
+    .el-select {
+      width: 220px;
+    }
+    
+    .run-time {
+      float: right;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
   }
 }
 

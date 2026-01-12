@@ -738,6 +738,106 @@ async def get_logs():
     return {"logs": state.training_logs[-100:]}
 
 
+# ============================================================================
+# TensorBoard 日志查询 API
+# ============================================================================
+
+@router.get("/runs")
+async def list_training_runs():
+    """列出所有训练记录（从TensorBoard日志目录扫描）"""
+    try:
+        from utils.tensorboard_parser import list_training_runs as scan_runs
+        
+        # TensorBoard 日志保存在 output/logs 目录
+        logs_dir = OUTPUT_BASE_DIR / "logs"
+        runs = scan_runs(logs_dir)
+        
+        return {"runs": runs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"扫描训练记录失败: {str(e)}")
+
+
+@router.get("/scalars")
+async def get_training_scalars(run: str = "", tag: str = "train/loss"):
+    """获取指定训练记录的标量数据
+    
+    Args:
+        run: 训练记录名称（默认使用最新）
+        tag: 标量标签名称（默认 train/loss）
+    """
+    try:
+        from utils.tensorboard_parser import get_scalar_data, list_training_runs as scan_runs
+        
+        logs_dir = OUTPUT_BASE_DIR / "logs"
+        
+        # 如果未指定run，使用最新的
+        if not run:
+            runs = scan_runs(logs_dir)
+            if not runs:
+                return {"data": [], "run": None, "tag": tag}
+            run = runs[0]["name"]
+        
+        logdir = str(logs_dir / run)
+        data = get_scalar_data(logdir, tag)
+        
+        return {"data": data, "run": run, "tag": tag}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取标量数据失败: {str(e)}")
+
+
+@router.get("/tags")
+async def get_available_tags(run: str = ""):
+    """获取指定训练记录的所有可用标量标签
+    
+    Args:
+        run: 训练记录名称（默认使用最新）
+    """
+    try:
+        from utils.tensorboard_parser import get_available_tags as fetch_tags, list_training_runs as scan_runs
+        
+        logs_dir = OUTPUT_BASE_DIR / "logs"
+        
+        # 如果未指定run，使用最新的
+        if not run:
+            runs = scan_runs(logs_dir)
+            if not runs:
+                return {"tags": [], "run": None}
+            run = runs[0]["name"]
+        
+        logdir = str(logs_dir / run)
+        tags = fetch_tags(logdir)
+        
+        return {"tags": tags, "run": run}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取标签列表失败: {str(e)}")
+
+
+@router.get("/all-scalars")
+async def get_all_scalars(run: str = ""):
+    """批量获取所有标量数据（减少HTTP请求）
+    
+    Args:
+        run: 训练记录名称（默认使用最新）
+    """
+    try:
+        from utils.tensorboard_parser import get_all_scalars as fetch_all, list_training_runs as scan_runs
+        
+        logs_dir = OUTPUT_BASE_DIR / "logs"
+        
+        # 如果未指定run，使用最新的
+        if not run:
+            runs = scan_runs(logs_dir)
+            if not runs:
+                return {"scalars": {}, "run": None}
+            run = runs[0]["name"]
+        
+        logdir = str(logs_dir / run)
+        scalars = fetch_all(logdir)
+        
+        return {"scalars": scalars, "run": run}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"批量获取数据失败: {str(e)}")
+
 @router.websocket("/ws")
 async def training_websocket(websocket: WebSocket):
     """WebSocket endpoint for real-time training updates"""
