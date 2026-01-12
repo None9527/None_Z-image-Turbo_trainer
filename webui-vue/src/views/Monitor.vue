@@ -209,16 +209,27 @@ const loadingRuns = ref(false)
 const historyLoss = ref<number[]>([])  // 从API加载的历史Loss
 const historyLr = ref<number[]>([])    // 从API加载的历史LR
 
-// 当前正在训练的记录名称（自动跟踪最新的）
+// 当前正在训练的记录名称（从配置获取）
 const currentRunName = computed(() => {
-  // 返回最新的训练记录名称（排序后的第一个）
+  // 优先使用正在训练的配置名称，否则使用列表第一个
+  if (trainingStore.progress.isRunning && trainingStore.config.outputName) {
+    return trainingStore.config.outputName
+  }
   return availableRuns.value.length > 0 ? availableRuns.value[0].name : ''
 })
 
 // 跳转到当前训练
 async function jumpToCurrentRun() {
-  if (currentRunName.value) {
-    selectedRun.value = currentRunName.value
+  const targetName = currentRunName.value
+  if (!targetName) return
+  
+  // 先刷新列表确保包含最新记录
+  await refreshRuns()
+  
+  // 在列表中查找匹配的记录
+  const found = availableRuns.value.find(r => r.name === targetName)
+  if (found) {
+    selectedRun.value = targetName
     await loadRunData()
   }
 }
