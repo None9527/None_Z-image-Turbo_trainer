@@ -12,6 +12,7 @@
           @change="loadRunData"
           :loading="loadingRuns"
           style="width: 380px"
+          popper-class="run-selector-dropdown"
         >
           <el-option 
             v-for="run in availableRuns" 
@@ -572,20 +573,8 @@ function formatTime(seconds: number): string {
       justify-content: space-between;
       align-items: center;
       width: 100%;
-      gap: var(--space-xl);
-      
-      .run-name {
-        font-weight: 500;
-        flex: 1;
-      }
-      
-      .run-time {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-        white-space: nowrap;
-        opacity: 0.7;
-      }
     }
+  }
     
     .el-button-group {
       .el-button--primary {
@@ -828,3 +817,33 @@ function formatTime(seconds: number): string {
 }
 </style>
 
+<!-- 全局样式：下拉选项需要穿透scoped -->
+<style lang="scss">
+.run-selector-dropdown {
+  .el-select-dropdown__item {
+    padding: 8px 16px;
+    
+    .run-option {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      gap: 24px;
+      
+      .run-name {
+        font-weight: 500;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      
+      .run-time {
+        font-size: 0.8rem;
+        color: rgba(255, 255, 255, 0.5);
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+    }
+  }
+}
+</style>
