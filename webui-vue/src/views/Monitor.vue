@@ -574,7 +574,6 @@ function formatTime(seconds: number): string {
       align-items: center;
       width: 100%;
     }
-  }
     
     .el-button-group {
       .el-button--primary {
