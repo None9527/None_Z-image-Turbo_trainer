@@ -136,7 +136,7 @@ def parse_args():
         args.train_lora = controlnet_cfg.get("train_lora", args.train_lora)
         
         # Training
-        args.output_dir = training_cfg.get("output_dir", args.output_dir)
+        args.output_dir = general_cfg.get("output_dir", args.output_dir)
         args.output_name = training_cfg.get("output_name", args.output_name)
         args.num_train_epochs = advanced_cfg.get("num_train_epochs", args.num_train_epochs)
         args.learning_rate = training_cfg.get("learning_rate", args.learning_rate)

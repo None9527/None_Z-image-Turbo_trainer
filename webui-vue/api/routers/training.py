@@ -542,8 +542,10 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         "# Z-Image 训练配置 (自动生成)",
         f"# 生成时间: {datetime.now().isoformat()}",
         "",
-        "[model]",
+        "[general]",
         f'model_type = "{model_type}"',
+        f'training_type = "{config.get("training_type", "lora")}"',
+        f'condition_mode = "{config.get("condition_mode", "text2img")}"',
         f'dit = "{str(get_model_path(model_type, "transformer")).replace(chr(92), "/")}"',
         f'output_dir = "{str(OUTPUT_BASE_DIR).replace(chr(92), "/")}"',
         "",
@@ -603,6 +605,20 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
             f"train_adaln = {'true' if lora_cfg.get('train_adaln', False) else 'false'}",
             f"train_norm = {'true' if lora_cfg.get('train_norm', False) else 'false'}",
             f"train_single_stream = {'true' if lora_cfg.get('train_single_stream', False) else 'false'}",
+        ])
+    
+    # [controlnet] 部分 - 仅在 training_type 为 controlnet 时输出
+    training_type = config.get("training_type", "lora")
+    if training_type == "controlnet":
+        controlnet_cfg = config.get("controlnet", {})
+        toml_lines.extend([
+            "",
+            "[controlnet]",
+            f'control_type = "{controlnet_cfg.get("control_type", "canny")}"',
+            f"conditioning_scale = {controlnet_cfg.get('conditioning_scale', 0.75)}",
+            f"freeze_transformer = {'true' if controlnet_cfg.get('freeze_transformer', True) else 'false'}",
+            f"train_lora = {'true' if controlnet_cfg.get('train_lora', False) else 'false'}",
+            f'controlnet_path = "{controlnet_cfg.get("controlnet_path", "").replace(chr(92), "/")}"',
         ])
     
     toml_lines.extend([
