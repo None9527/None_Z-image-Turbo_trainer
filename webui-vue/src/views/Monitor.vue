@@ -1,18 +1,17 @@
 <template>
   <div class="monitor-page">
     <div class="page-header">
-      <div class="header-left">
-        <h1 class="gradient-text">训练监控</h1>
-        <p class="subtitle">实时查看训练状态和曲线</p>
-      </div>
-      <!-- 训练记录选择器 -->
-      <div class="run-selector">
+      <h1 class="gradient-text">训练监控</h1>
+      <p class="subtitle">实时查看训练状态和曲线</p>
+      
+      <!-- 训练记录选择器 - 移到标题下方 -->
+      <div class="run-selector-row">
         <el-select 
           v-model="selectedRun" 
           placeholder="选择训练记录" 
-          size="small"
           @change="loadRunData"
           :loading="loadingRuns"
+          style="width: 280px"
         >
           <el-option 
             v-for="run in availableRuns" 
@@ -20,17 +19,26 @@
             :label="run.name" 
             :value="run.name"
           >
-            <span>{{ run.name }}</span>
-            <span class="run-time">{{ formatRunTime(run.start_time) }}</span>
+            <div class="run-option">
+              <span class="run-name">{{ run.name }}</span>
+              <span class="run-time">{{ formatRunTime(run.start_time) }}</span>
+            </div>
           </el-option>
         </el-select>
-        <el-button 
-          size="small" 
-          :icon="Refresh" 
-          circle 
-          @click="refreshRuns"
-          :loading="loadingRuns"
-        />
+        
+        <el-button-group>
+          <el-button 
+            type="primary"
+            :icon="Aim" 
+            @click="jumpToCurrentRun"
+            :disabled="!currentRunName || selectedRun === currentRunName"
+          >当前训练</el-button>
+          <el-button 
+            :icon="Refresh" 
+            @click="refreshRuns"
+            :loading="loadingRuns"
+          />
+        </el-button-group>
       </div>
     </div>
 
@@ -178,7 +186,7 @@ import { useTrainingStore } from '@/stores/training'
 import { useSystemStore } from '@/stores/system'
 import VChart from 'vue-echarts'
 import axios from 'axios'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, Aim } from '@element-plus/icons-vue'
 
 const trainingStore = useTrainingStore()
 const systemStore = useSystemStore()
@@ -200,6 +208,20 @@ const selectedRun = ref('')
 const loadingRuns = ref(false)
 const historyLoss = ref<number[]>([])  // 从API加载的历史Loss
 const historyLr = ref<number[]>([])    // 从API加载的历史LR
+
+// 当前正在训练的记录名称（自动跟踪最新的）
+const currentRunName = computed(() => {
+  // 返回最新的训练记录名称（排序后的第一个）
+  return availableRuns.value.length > 0 ? availableRuns.value[0].name : ''
+})
+
+// 跳转到当前训练
+async function jumpToCurrentRun() {
+  if (currentRunName.value) {
+    selectedRun.value = currentRunName.value
+    await loadRunData()
+  }
+}
 
 // 获取训练记录列表
 async function refreshRuns() {
@@ -509,35 +531,53 @@ function formatTime(seconds: number): string {
 
 .page-header {
   margin-bottom: var(--space-xl);
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
   
-  .header-left {
-    h1 {
-      font-family: var(--font-display);
-      font-size: 2rem;
-      margin-bottom: var(--space-xs);
-    }
-    
-    .subtitle {
-      color: var(--text-muted);
-    }
+  h1 {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    margin-bottom: var(--space-xs);
   }
   
-  .run-selector {
+  .subtitle {
+    color: var(--text-muted);
+    margin-bottom: var(--space-md);
+  }
+  
+  .run-selector-row {
     display: flex;
     align-items: center;
-    gap: var(--space-sm);
+    gap: var(--space-md);
+    margin-top: var(--space-sm);
     
     .el-select {
-      width: 220px;
+      :deep(.el-input__wrapper) {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
     }
     
-    .run-time {
-      float: right;
-      font-size: 0.75rem;
-      color: var(--text-muted);
+    .run-option {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      
+      .run-name {
+        font-weight: 500;
+      }
+      
+      .run-time {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-left: var(--space-md);
+      }
+    }
+    
+    .el-button-group {
+      .el-button--primary {
+        background: linear-gradient(135deg, var(--primary), var(--secondary));
+        border: none;
+      }
     }
   }
 }
