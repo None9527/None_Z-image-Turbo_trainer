@@ -187,6 +187,7 @@ import { useTrainingStore } from '@/stores/training'
 import { useSystemStore } from '@/stores/system'
 import VChart from 'vue-echarts'
 import axios from 'axios'
+import { ElMessage } from 'element-plus'
 import { Refresh, Aim } from '@element-plus/icons-vue'
 
 const trainingStore = useTrainingStore()
@@ -210,21 +211,44 @@ const loadingRuns = ref(false)
 const historyLoss = ref<number[]>([])  // 从API加载的历史Loss
 const historyLr = ref<number[]>([])    // 从API加载的历史LR
 
-// 当前正在训练的记录名称（从配置获取）
+// 当前正在训练的记录名称
+const currentTrainingName = ref('')
+
+// 从后端获取当前训练配置名称
+async function fetchCurrentTrainingName() {
+  try {
+    const res = await axios.get('/api/training/config/current')
+    currentTrainingName.value = res.data?.training?.output_name || ''
+  } catch (e) {
+    console.warn('无法获取当前训练名称:', e)
+  }
+}
+
+// 当前训练名称（用于按钮禁用状态判断）
 const currentRunName = computed(() => {
-  // 优先使用正在训练的配置名称，否则使用列表第一个
+  // 优先使用从后端获取的当前配置名称
+  if (currentTrainingName.value) {
+    return currentTrainingName.value
+  }
+  // 备选：从store获取
   if (trainingStore.progress.isRunning && trainingStore.config.outputName) {
     return trainingStore.config.outputName
   }
-  return availableRuns.value.length > 0 ? availableRuns.value[0].name : ''
+  return ''
 })
 
 // 跳转到当前训练
 async function jumpToCurrentRun() {
-  const targetName = currentRunName.value
-  if (!targetName) return
+  // 先刷新当前训练名称
+  await fetchCurrentTrainingName()
   
-  // 先刷新列表确保包含最新记录
+  const targetName = currentTrainingName.value
+  if (!targetName) {
+    ElMessage.warning('未找到当前训练配置')
+    return
+  }
+  
+  // 刷新列表确保包含最新记录
   await refreshRuns()
   
   // 在列表中查找匹配的记录
@@ -232,6 +256,8 @@ async function jumpToCurrentRun() {
   if (found) {
     selectedRun.value = targetName
     await loadRunData()
+  } else {
+    ElMessage.warning(`未找到训练记录: ${targetName}`)
   }
 }
 
