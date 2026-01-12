@@ -427,9 +427,30 @@ async def start_training(config: Dict[str, Any]):
         num_gpus = config.get("advanced", {}).get("num_gpus", 1)
         gpu_ids = config.get("advanced", {}).get("gpu_ids", "")  # 如 "0,1,2"
         
-        # 根据模型类型选择对应的训练脚本
-        # Z-Image 使用 AC-RF V2 训练脚本
-        train_script = PROJECT_ROOT / "scripts" / "train_zimage_v2.py"
+        # 根据训练类型选择对应的训练脚本
+        training_type = config.get("training_type", "lora")
+        condition_mode = config.get("condition_mode", "text2img")
+        
+        if training_type == "lora":
+            # LoRA训练（默认）
+            if condition_mode == "omni":
+                train_script = PROJECT_ROOT / "scripts" / "train_zimage_omni.py"
+                state.add_log("训练模式: LoRA + Omni (SigLIP多图条件)", "info")
+            else:
+                train_script = PROJECT_ROOT / "scripts" / "train_zimage_v2.py"
+                state.add_log(f"训练模式: LoRA + {condition_mode.upper()}", "info")
+        elif training_type == "finetune":
+            # 全量微调
+            train_script = PROJECT_ROOT / "scripts" / "train_full_finetune.py"
+            state.add_log("训练模式: Finetune (全量微调，显存需求高)", "warning")
+        elif training_type == "controlnet":
+            # ControlNet训练
+            train_script = PROJECT_ROOT / "scripts" / "train_controlnet.py"
+            state.add_log("训练模式: ControlNet", "info")
+        else:
+            # 默认使用LoRA
+            train_script = PROJECT_ROOT / "scripts" / "train_zimage_v2.py"
+            state.add_log(f"未知训练类型 {training_type}，使用默认LoRA脚本", "warning")
         
         # 构建 accelerate 参数
         accelerate_args = [
