@@ -59,7 +59,7 @@ export interface TrainingProgress {
 export const useTrainingStore = defineStore('training', () => {
   const config = ref<TrainingConfig>({
     outputDir: './output',
-    outputName: 'zimage-lora',
+    outputName: '',  // 留空，强制用户命名
     modelType: 'zimage',
     modelPath: '',
     vaePath: '',

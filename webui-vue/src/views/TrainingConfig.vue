@@ -1166,7 +1166,7 @@ function getDefaultConfig() {
       learning_rate: '1e-4'
     },
     training: {
-      output_name: 'zimage-lora',
+      output_name: '',  // 留空，强制用户命名
       learning_rate: 0.0001,
       learning_rate_str: '1e-4',  // 用于UI显示
       weight_decay: 0,
@@ -1296,6 +1296,47 @@ async function saveCurrentConfig() {
   if (!currentConfigName.value) {
     ElMessage.warning('请先选择或创建一个配置')
     return
+  }
+  
+  // 验证输出名称
+  const outputName = config.value.training.output_name?.trim()
+  if (!outputName) {
+    ElMessage.warning('请填写输出名称（用于标识训练记录）')
+    // 展开训练设置面板
+    if (!activeNames.value.includes('training')) {
+      activeNames.value.push('training')
+    }
+    return
+  }
+  
+  // 检查名称是否已存在（通过训练记录API）
+  try {
+    const runsRes = await axios.get('/api/training/runs')
+    const existingRuns = runsRes.data.runs || []
+    const exists = existingRuns.some((r: any) => r.name === outputName)
+    
+    if (exists) {
+      try {
+        await ElMessageBox.confirm(
+          `训练记录 "${outputName}" 已存在，继续使用此名称将覆盖原有日志数据。\n\n建议使用唯一名称以区分不同训练。`,
+          '名称已存在',
+          { 
+            confirmButtonText: '继续使用', 
+            cancelButtonText: '修改名称', 
+            type: 'warning' 
+          }
+        )
+      } catch {
+        // 用户选择修改名称
+        if (!activeNames.value.includes('training')) {
+          activeNames.value.push('training')
+        }
+        return
+      }
+    }
+  } catch (e) {
+    // API调用失败时不阻止保存
+    console.warn('无法检查训练记录:', e)
   }
   
   saving.value = true
