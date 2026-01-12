@@ -111,19 +111,19 @@
               
               <div class="control-row">
                 <span class="label">
-                  控制类型
-                  <el-tooltip content="选择 ControlNet 控制条件的类型" placement="top">
+                  控制类型 (可多选)
+                  <el-tooltip content="选择要训练的控制类型，可同时训练多种" placement="top">
                     <el-icon class="help-icon"><QuestionFilled /></el-icon>
                   </el-tooltip>
                 </span>
-                <el-select v-model="config.controlnet.control_type" style="width: 180px">
-                  <el-option label="Canny 边缘" value="canny" />
-                  <el-option label="Depth 深度" value="depth" />
-                  <el-option label="Pose 姿态" value="pose" />
-                  <el-option label="Normal 法线" value="normal" />
-                  <el-option label="LineArt 线稿" value="lineart" />
-                  <el-option label="Seg 分割" value="seg" />
-                </el-select>
+                <el-checkbox-group v-model="config.controlnet.control_types">
+                  <el-checkbox label="canny">Canny 边缘</el-checkbox>
+                  <el-checkbox label="depth">Depth 深度</el-checkbox>
+                  <el-checkbox label="pose">Pose 姿态</el-checkbox>
+                  <el-checkbox label="normal">Normal 法线</el-checkbox>
+                  <el-checkbox label="lineart">LineArt 线稿</el-checkbox>
+                  <el-checkbox label="seg">Seg 分割</el-checkbox>
+                </el-checkbox-group>
               </div>
               
               <div class="control-row">
@@ -137,33 +137,13 @@
                 <el-input-number v-model="config.controlnet.conditioning_scale" :min="0" :max="1" :step="0.05" controls-position="right" class="input-fixed" />
               </div>
               
-              <div class="control-row">
-                <span class="label">
-                  冻结 Transformer
-                  <el-tooltip content="冻结主模型，只训练 ControlNet (推荐)" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-switch v-model="config.controlnet.freeze_transformer" />
-              </div>
-              
-              <div class="control-row">
-                <span class="label">
-                  同时训练 LoRA
-                  <el-tooltip content="在训练 ControlNet 的同时训练 Transformer LoRA" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-switch v-model="config.controlnet.train_lora" :disabled="!config.controlnet.freeze_transformer" />
-              </div>
-              
               <el-alert 
                 type="info" 
                 :closable="false" 
                 show-icon
                 style="margin-top: 16px"
               >
-                ControlNet 训练需要准备配对数据：控制图像 (source/) 和目标图像 (target/)
+                ControlNet 训练时 Transformer 自动冻结。需准备配对数据：控制图像 (source/) 和目标图像 (target/)
               </el-alert>
             </template>
           </div>
@@ -1247,10 +1227,8 @@ function getDefaultConfig() {
       train_single_stream: false
     },
     controlnet: {
-      control_type: 'canny',          // 控制类型: canny, depth, pose, normal, lineart, seg
+      control_types: ['canny'],       // 控制类型数组: canny, depth, pose, normal, lineart, seg
       conditioning_scale: 0.75,       // 条件强度 (0-1)
-      freeze_transformer: true,       // 冻结主模型
-      train_lora: false,              // 同时训练 LoRA
       controlnet_path: ''             // 预训练 ControlNet 路径
     },
     optimizer: {

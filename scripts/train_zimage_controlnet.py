@@ -66,15 +66,10 @@ def parse_args():
     parser.add_argument("--vae", type=str, default=None, help="VAE 模型路径")
     
     # ControlNet specific
-    parser.add_argument("--control_type", type=str, default="canny",
-        choices=["canny", "depth", "pose", "normal", "lineart", "seg"],
-        help="控制类型")
+    parser.add_argument("--control_types", type=str, nargs="+", default=["canny"],
+        help="控制类型列表，可同时训练多种")
     parser.add_argument("--conditioning_scale", type=float, default=0.75,
         help="ControlNet 条件强度 (0-1)")
-    parser.add_argument("--freeze_transformer", type=bool, default=True,
-        help="冻结 Transformer 只训练 ControlNet (推荐)")
-    parser.add_argument("--train_lora", type=bool, default=False,
-        help="同时训练 Transformer LoRA")
     
     # Training params
     parser.add_argument("--output_dir", type=str, default="output")
@@ -130,10 +125,8 @@ def parse_args():
         
         # ControlNet specific
         args.controlnet = controlnet_cfg.get("controlnet_path", args.controlnet)
-        args.control_type = controlnet_cfg.get("control_type", args.control_type)
+        args.control_types = controlnet_cfg.get("control_types", args.control_types)
         args.conditioning_scale = controlnet_cfg.get("conditioning_scale", args.conditioning_scale)
-        args.freeze_transformer = controlnet_cfg.get("freeze_transformer", args.freeze_transformer)
-        args.train_lora = controlnet_cfg.get("train_lora", args.train_lora)
         
         # Training
         args.output_dir = general_cfg.get("output_dir", args.output_dir)
@@ -200,10 +193,10 @@ def main():
     logger.info("🎛️ Z-Image ControlNet Training")
     logger.info("=" * 60)
     logger.info(f"📁 输出: {args.output_dir}/{args.output_name}")
-    logger.info(f"🎮 控制类型: {args.control_type}")
+    logger.info(f"🎮 控制类型: {', '.join(args.control_types)}")
     logger.info(f"💪 条件强度: {args.conditioning_scale}")
     logger.info(f"⚡ 精度: {weight_dtype}")
-    logger.info(f"🔒 冻结 Transformer: {args.freeze_transformer}")
+    logger.info("🔒 Transformer 自动冻结")
     
     # =========================================================================
     # 1. Load Transformer (主模型)
@@ -218,13 +211,10 @@ def main():
         transformer.enable_gradient_checkpointing()
         logger.info("  [CKPT] Gradient checkpointing enabled")
     
-    # 冻结 Transformer
-    if args.freeze_transformer:
-        transformer.requires_grad_(False)
-        transformer.eval()
-        logger.info("  [FREEZE] Transformer 已冻结")
-    else:
-        transformer.train()
+    # 冻结 Transformer (ControlNet训练始终冻结主模型)
+    transformer.requires_grad_(False)
+    transformer.eval()
+    logger.info("  [FREEZE] Transformer 已冻结")
     
     # =========================================================================
     # 2. Load ControlNet and share modules from Transformer

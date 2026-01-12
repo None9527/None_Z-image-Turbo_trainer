@@ -611,13 +611,14 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
     training_type = config.get("training_type", "lora")
     if training_type == "controlnet":
         controlnet_cfg = config.get("controlnet", {})
+        control_types = controlnet_cfg.get("control_types", ["canny"])
+        # 将数组转为 TOML 格式
+        control_types_str = "[" + ", ".join(f'"{t}"' for t in control_types) + "]"
         toml_lines.extend([
             "",
             "[controlnet]",
-            f'control_type = "{controlnet_cfg.get("control_type", "canny")}"',
+            f"control_types = {control_types_str}",
             f"conditioning_scale = {controlnet_cfg.get('conditioning_scale', 0.75)}",
-            f"freeze_transformer = {'true' if controlnet_cfg.get('freeze_transformer', True) else 'false'}",
-            f"train_lora = {'true' if controlnet_cfg.get('train_lora', False) else 'false'}",
             f'controlnet_path = "{controlnet_cfg.get("controlnet_path", "").replace(chr(92), "/")}"',
         ])
     
