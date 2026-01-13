@@ -516,6 +516,40 @@
               </span>
               <el-input v-model="config.advanced.gpu_ids" placeholder="如: 0,1,2" style="width: 150px" />
             </div>
+            
+            <!-- CFG 训练配置 -->
+            <div class="subsection-label">CFG 训练 (CFG TRAINING)</div>
+            <div class="control-row">
+              <span class="label">
+                启用 CFG 训练
+                <el-tooltip content="训练时模拟推理的 CFG 计算方式，提升 LoRA 推理时的 CFG 效果 (显存翻倍)" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-switch v-model="config.acrf.cfg_training" />
+            </div>
+            <template v-if="config.acrf.cfg_training">
+              <div class="control-row">
+                <span class="label">
+                  CFG Scale
+                  <el-tooltip content="训练时使用的 Guidance Scale，建议与推理时保持一致" placement="top">
+                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-slider v-model="config.acrf.cfg_scale" :min="1" :max="15" :step="0.5" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.acrf.cfg_scale" :min="1" :max="15" :step="0.5" controls-position="right" class="input-fixed" />
+              </div>
+              <div class="control-row">
+                <span class="label">
+                  CFG 训练比例
+                  <el-tooltip content="多少比例的 batch 使用 CFG 模式 (0.3 = 30%)" placement="top">
+                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-slider v-model="config.acrf.cfg_training_ratio" :min="0.1" :max="1.0" :step="0.1" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.acrf.cfg_training_ratio" :min="0.1" :max="1.0" :step="0.1" controls-position="right" class="input-fixed" />
+              </div>
+            </template>
           </div>
         </el-collapse-item>
 
@@ -1213,7 +1247,11 @@ function getDefaultConfig() {
       enable_curvature: false,
       lambda_curvature: 0.05,
       curvature_interval: 10,
-      curvature_start_epoch: 0
+      curvature_start_epoch: 0,
+      // CFG Training (训练时使用 CFG 引导)
+      cfg_training: false,
+      cfg_scale: 7.0,
+      cfg_training_ratio: 0.3
     },
     network: {
       dim: 8,

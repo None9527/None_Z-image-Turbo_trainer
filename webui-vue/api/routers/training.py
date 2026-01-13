@@ -581,6 +581,10 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         f"lambda_curvature = {config.get('acrf', {}).get('lambda_curvature', 0.05)}",
         f"curvature_interval = {config.get('acrf', {}).get('curvature_interval', 10)}",
         f"curvature_start_epoch = {config.get('acrf', {}).get('curvature_start_epoch', 0)}",
+        # CFG Training
+        f"cfg_training = {'true' if config.get('acrf', {}).get('cfg_training', False) else 'false'}",
+        f"cfg_scale = {config.get('acrf', {}).get('cfg_scale', 7.0)}",
+        f"cfg_training_ratio = {config.get('acrf', {}).get('cfg_training_ratio', 0.3)}",
         "",
     ]
     
@@ -664,6 +668,7 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         f"batch_size = {dataset_cfg.get('batch_size', 1)}",
         f"shuffle = {'true' if dataset_cfg.get('shuffle', True) else 'false'}",
         f"enable_bucket = {'true' if dataset_cfg.get('enable_bucket', True) else 'false'}",
+        f"drop_text_ratio = {dataset_cfg.get('drop_text_ratio', 0.1)}",
         "",
     ])
     
