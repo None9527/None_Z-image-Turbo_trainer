@@ -651,8 +651,13 @@ def main():
     ema_loss = None
     ema_decay = 0.99
     
-    # Loss 累积变量（TensorBoard 标准做法）
+    # Loss 累积变量（TensorBoard 标准做法，与 LoRA 脚本一致）
     accumulated_loss = 0.0
+    accumulated_l1 = 0.0
+    accumulated_cos = 0.0
+    accumulated_freq = 0.0
+    accumulated_style = 0.0
+    accumulated_l2 = 0.0
     accumulation_count = 0
     
     for epoch in range(args.num_train_epochs):
@@ -704,35 +709,49 @@ def main():
                 ).to(weight_dtype).squeeze()  # (B,1,1,1) -> (B,)
                 
                 # L1 Loss
-                l1_loss = F.l1_loss(pred, target, reduction='none')
-                l1_loss = (l1_loss.mean(dim=(1, 2, 3)) * snr_weights).mean()
+                l1_loss_raw = F.l1_loss(pred, target, reduction='none')
+                l1_loss = (l1_loss_raw.mean(dim=(1, 2, 3)) * snr_weights).mean()
                 total_loss = l1_loss * args.lambda_l1
+                l1_val = l1_loss.detach().float().item()
                 
                 # Cosine Loss
+                cos_val = 0.0
                 if args.lambda_cosine > 0:
                     cos_loss = 1.0 - F.cosine_similarity(
                         pred.flatten(1), target.flatten(1), dim=1
                     ).mean()
                     total_loss = total_loss + cos_loss * args.lambda_cosine
+                    cos_val = cos_loss.detach().float().item()
                 
                 # Freq Loss
+                freq_val = 0.0
                 if freq_loss_fn is not None and args.lambda_freq > 0:
                     freq_loss = freq_loss_fn(pred, target, noisy_latents, timesteps, num_train_timesteps=1000)
                     total_loss = total_loss + freq_loss * args.lambda_freq
+                    freq_val = freq_loss.detach().float().item()
                 
                 # Style Loss
+                style_val = 0.0
                 if style_loss_fn is not None and args.lambda_style > 0:
                     style_loss = style_loss_fn(pred, target, noisy_latents, timesteps, num_train_timesteps=1000)
                     total_loss = total_loss + style_loss * args.lambda_style
+                    style_val = style_loss.detach().float().item()
                 
                 # RAFT L2 Loss
+                l2_val = 0.0
                 if raft_mode:
-                    l2_loss = F.mse_loss(pred, target, reduction='none')
-                    l2_loss = (l2_loss.mean(dim=(1, 2, 3)) * snr_weights).mean()
+                    l2_loss_raw = F.mse_loss(pred, target, reduction='none')
+                    l2_loss = (l2_loss_raw.mean(dim=(1, 2, 3)) * snr_weights).mean()
                     total_loss = total_loss + l2_loss * current_l2_ratio
+                    l2_val = l2_loss.detach().float().item()
                 
-                # 累积 loss
+                # 累积 loss（与 LoRA 脚本一致）
                 accumulated_loss += total_loss.detach().float().item()
+                accumulated_l1 += l1_val
+                accumulated_cos += cos_val
+                accumulated_freq += freq_val
+                accumulated_style += style_val
+                accumulated_l2 += l2_val
                 accumulation_count += 1
                 
                 # Backward (保持 bf16，避免不必要的 dtype 转换)
@@ -747,9 +766,21 @@ def main():
                 
                 global_step += 1
                 
-                # 计算累积期间的平均 loss
+                # 计算累积期间的平均 loss（与 LoRA 脚本一致）
                 avg_loss = accumulated_loss / max(accumulation_count, 1)
+                avg_l1 = accumulated_l1 / max(accumulation_count, 1)
+                avg_cos = accumulated_cos / max(accumulation_count, 1)
+                avg_freq = accumulated_freq / max(accumulation_count, 1)
+                avg_style = accumulated_style / max(accumulation_count, 1)
+                avg_l2 = accumulated_l2 / max(accumulation_count, 1)
+                
+                # 重置累积变量
                 accumulated_loss = 0.0
+                accumulated_l1 = 0.0
+                accumulated_cos = 0.0
+                accumulated_freq = 0.0
+                accumulated_style = 0.0
+                accumulated_l2 = 0.0
                 accumulation_count = 0
                 
                 # Update EMA loss
@@ -758,14 +789,19 @@ def main():
                 else:
                     ema_loss = ema_decay * ema_loss + (1 - ema_decay) * avg_loss
                 
-                # 打印日志（与 LoRA 脚本格式一致）
+                # 打印日志（与 LoRA 脚本格式完全一致）
                 if accelerator.is_main_process:
                     current_lr = lr_scheduler.get_last_lr()[0]
-                    print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={avg_loss:.4f} ema={ema_loss:.4f} lr={current_lr:.2e}", flush=True)
+                    print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={avg_loss:.4f} ema={ema_loss:.4f} l1={avg_l1:.4f} cos={avg_cos:.4f} freq={avg_freq:.4f} style={avg_style:.4f} L2={avg_l2:.4f} lr={current_lr:.2e}", flush=True)
                     
-                    if writer and global_step % 10 == 0:
+                    if writer:
                         writer.add_scalar("train/loss", avg_loss, global_step)
                         writer.add_scalar("train/ema_loss", ema_loss, global_step)
+                        writer.add_scalar("train/l1_loss", avg_l1, global_step)
+                        writer.add_scalar("train/cosine_loss", avg_cos, global_step)
+                        writer.add_scalar("train/freq_loss", avg_freq, global_step)
+                        writer.add_scalar("train/style_loss", avg_style, global_step)
+                        writer.add_scalar("train/l2_loss", avg_l2, global_step)
                         writer.add_scalar("train/learning_rate", current_lr, global_step)
         
         # Save checkpoint
