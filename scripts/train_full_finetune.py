@@ -390,13 +390,29 @@ def main():
     # =========================================================================
     logger.info("\n[3/6] 初始化损失函数...")
     
+    # 解析布尔参数（TOML 可能返回字符串）
+    enable_freq = args.enable_freq
+    if isinstance(enable_freq, str):
+        enable_freq = enable_freq.lower() in ('true', '1', 'yes')
+    enable_freq = bool(enable_freq)
+    
+    enable_style = args.enable_style
+    if isinstance(enable_style, str):
+        enable_style = enable_style.lower() in ('true', '1', 'yes')
+    enable_style = bool(enable_style)
+    
+    raft_mode = args.raft_mode
+    if isinstance(raft_mode, str):
+        raft_mode = raft_mode.lower() in ('true', '1', 'yes')
+    raft_mode = bool(raft_mode)
+    
     freq_loss_fn = None
-    if args.enable_freq:
+    if enable_freq:
         freq_loss_fn = FrequencyAwareLoss(alpha_hf=args.alpha_hf, beta_lf=args.beta_lf)
         logger.info(f"  ✓ Freq Loss: α_hf={args.alpha_hf}, β_lf={args.beta_lf}")
     
     style_loss_fn = None
-    if args.enable_style:
+    if enable_style:
         style_loss_fn = LatentStyleStructureLoss(
             lambda_light=args.lambda_light,
             lambda_color=args.lambda_color,
@@ -533,7 +549,7 @@ def main():
                 # Compute losses
                 snr_weights = compute_snr_weights(
                     timesteps, snr_gamma=args.snr_gamma, snr_floor=args.snr_floor
-                ).to(weight_dtype)
+                ).to(weight_dtype).squeeze()  # (B,1,1,1) -> (B,)
                 
                 # L1 Loss
                 l1_loss = F.l1_loss(pred, target, reduction='none')
@@ -558,7 +574,7 @@ def main():
                     total_loss = total_loss + style_loss * args.lambda_style
                 
                 # RAFT L2 Loss
-                if args.raft_mode:
+                if raft_mode:
                     current_ratio = l2_scheduler.get_ratio(epoch) if l2_scheduler else args.free_stream_ratio
                     l2_loss = F.mse_loss(pred, target, reduction='none')
                     l2_loss = (l2_loss.mean(dim=(1, 2, 3)) * snr_weights).mean()
