@@ -412,6 +412,8 @@ class ZImageTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOr
         """
         self.block_swapper = block_swapper
         if block_swapper is not None:
+            # 强制重置状态（所有层当前都在 GPU）
+            block_swapper.layer_on_gpu = [True] * len(self.layers)
             block_swapper.setup(self.layers)
 
     def unpatchify(self, x: List[torch.Tensor], size: List[Tuple], patch_size, f_patch_size) -> List[torch.Tensor]:
