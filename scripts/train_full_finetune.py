@@ -557,21 +557,17 @@ def main():
                     latents, noise, jitter_scale=args.jitter_scale, use_anchor=args.enable_turbo
                 )
                 
-                # Forward pass (直接批量处理，避免 unbind/stack 的显存开销)
+                # Forward pass (transformer 需要 list 输入)
                 model_input = noisy_latents.unsqueeze(2)  # (B, C, 1, H, W)
+                model_input_list = list(model_input.unbind(dim=0))  # List of (C, 1, H, W)
                 t_norm = (1000 - timesteps) / 1000.0
                 
-                # 直接调用 transformer，不使用 unbind
                 pred_list = transformer(
-                    x=model_input,
+                    x=model_input_list,
                     t=t_norm.to(dtype=weight_dtype),
                     cap_feats=vl_embed,
                 )[0]
-                # pred_list 可能是 list 或 tensor，统一处理
-                if isinstance(pred_list, list):
-                    pred = -torch.stack(pred_list, dim=0).squeeze(2)
-                else:
-                    pred = -pred_list.squeeze(2)
+                pred = -torch.stack(pred_list, dim=0).squeeze(2)
                 
                 # Compute losses
                 snr_weights = compute_snr_weights(
