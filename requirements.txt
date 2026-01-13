@@ -40,8 +40,9 @@ sentencepiece>=0.1.99 # Tokenizer 依赖
 # ========================
 # 优化器
 # ========================
-bitsandbytes>=0.42.0  # AdamW8bit 优化器
+bitsandbytes>=0.42.0  # AdamW8bit, Lion8bit 优化器
 prodigyopt>=1.0  # Prodigy 自适应学习率优化器
+lion-pytorch>=0.1.0  # Lion 优化器
 
 # ========================
 # 损失函数

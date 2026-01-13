@@ -589,6 +589,22 @@ def main():
         except ImportError:
             logger.warning("  ⚠ prodigyopt 未安装 (pip install prodigyopt)，使用 AdamW")
             optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
+    elif args.optimizer_type == "Lion":
+        try:
+            from lion_pytorch import Lion
+            optimizer = Lion(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
+            logger.info("  🦁 Lion 优化器 (显存低)")
+        except ImportError:
+            logger.warning("  ⚠ lion-pytorch 未安装 (pip install lion-pytorch)，使用 AdamW")
+            optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
+    elif args.optimizer_type == "Lion8bit":
+        try:
+            import bitsandbytes as bnb
+            optimizer = bnb.optim.Lion8bit(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
+            logger.info("  🦁 Lion8bit 优化器 (显存最低)")
+        except ImportError:
+            logger.warning("  ⚠ bitsandbytes 未安装，使用标准 AdamW")
+            optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
     else:
         optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
     

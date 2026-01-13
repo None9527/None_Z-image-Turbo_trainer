@@ -410,6 +410,8 @@
                 <el-option label="AdamW8bit (显存优化)" value="AdamW8bit" />
                 <el-option label="Adafactor" value="Adafactor" />
                 <el-option label="Prodigy (自适应LR)" value="Prodigy" />
+                <el-option label="Lion (显存低)" value="Lion" />
+                <el-option label="Lion8bit (显存最低)" value="Lion8bit" />
               </el-select>
             </div>
             <!-- Adafactor relative_step 开关 -->
