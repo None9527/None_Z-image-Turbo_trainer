@@ -476,6 +476,9 @@ def main():
         unwrapped_transformer = accelerator.unwrap_model(transformer)
         unwrapped_transformer.set_block_swapper(block_swapper)
         logger.info("  [SWAP] Block Swapper re-attached after accelerator.prepare()")
+        # 打印实际状态
+        stats = block_swapper.get_stats()
+        logger.info(f"  [SWAP] 状态: GPU={stats['layers_on_gpu']}层, CPU={stats['layers_on_cpu']}层")
     
     # 在 accelerator.prepare() 之后启用 gradient checkpointing
     if args.gradient_checkpointing:
