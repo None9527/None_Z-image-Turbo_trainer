@@ -401,7 +401,7 @@
             <div class="form-row-full">
               <label>
                 优化器类型
-                <el-tooltip content="AdamW8bit 省显存，Adafactor 更省但可能不稳定" placement="top">
+                <el-tooltip content="AdamW8bit 省显存，Adafactor 更省但可能不稳定，Prodigy 自适应LR" placement="top">
                   <el-icon class="help-icon"><QuestionFilled /></el-icon>
                 </el-tooltip>
               </label>
@@ -409,6 +409,7 @@
                 <el-option label="AdamW" value="AdamW" />
                 <el-option label="AdamW8bit (显存优化)" value="AdamW8bit" />
                 <el-option label="Adafactor" value="Adafactor" />
+                <el-option label="Prodigy (自适应LR)" value="Prodigy" />
               </el-select>
             </div>
             <div class="form-row-full">

@@ -558,6 +558,22 @@ def main():
             trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay,
             scale_parameter=False, relative_step=False
         )
+    elif args.optimizer_type == "Prodigy":
+        try:
+            from prodigyopt import Prodigy
+            # Prodigy 是自适应学习率优化器，建议 LR=1.0，内部自动调整
+            prodigy_lr = args.learning_rate if args.learning_rate >= 0.1 else 1.0
+            optimizer = Prodigy(
+                trainable_params, 
+                lr=prodigy_lr,
+                weight_decay=args.weight_decay,
+                safeguard_warmup=True,
+                use_bias_correction=True,
+            )
+            logger.info(f"  🧒 Prodigy 优化器 (自适应 LR)")
+        except ImportError:
+            logger.warning("  ⚠ prodigyopt 未安装 (pip install prodigyopt)，使用 AdamW")
+            optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
     else:
         optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
     
