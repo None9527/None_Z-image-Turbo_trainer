@@ -690,6 +690,9 @@ def main():
     accumulated_l2 = 0.0
     accumulation_count = 0
     
+    # Kohya 风格: 5步滑动平均 (avr_loss)
+    loss_history = []
+    
     for epoch in range(args.num_train_epochs):
         if _interrupted:
             logger.info("[EXIT] Training interrupted by user")
@@ -1070,6 +1073,12 @@ def main():
                 else:
                     ema_loss = ema_decay * ema_loss + (1 - ema_decay) * avg_loss
                 
+                # Kohya 风格: 5步滑动平均
+                loss_history.append(avg_loss)
+                if len(loss_history) > 5:
+                    loss_history.pop(0)
+                avr_loss = sum(loss_history) / len(loss_history)
+                
                 # Get current learning rate
                 current_lr = lr_scheduler.get_last_lr()[0]
                 
@@ -1077,10 +1086,11 @@ def main():
                 # 只让主进程打印日志，避免多卡训练时日志混乱
                 if accelerator.is_main_process:
                     curv = last_curv_loss
-                    print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={avg_loss:.4f} ema={ema_loss:.4f} l1={avg_l1:.4f} cos={avg_cos:.4f} freq={avg_freq:.4f} style={avg_style:.4f} L2={avg_l2:.4f} curv={curv:.4f} lr={current_lr:.2e}", flush=True)
+                    print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={avg_loss:.4f} avr={avr_loss:.4f} ema={ema_loss:.4f} l1={avg_l1:.4f} cos={avg_cos:.4f} freq={avg_freq:.4f} style={avg_style:.4f} L2={avg_l2:.4f} curv={curv:.4f} lr={current_lr:.2e}", flush=True)
                     
                     if writer:
                         writer.add_scalar("train/loss", avg_loss, global_step)
+                        writer.add_scalar("train/avr_loss", avr_loss, global_step)
                         writer.add_scalar("train/ema_loss", ema_loss, global_step)
                         writer.add_scalar("train/l1_loss", avg_l1, global_step)
                         writer.add_scalar("train/cosine_loss", avg_cos, global_step)
