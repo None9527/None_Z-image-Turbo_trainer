@@ -490,6 +490,14 @@ def main():
         else:
             unwrapped_transformer.gradient_checkpointing = True
         logger.info("  [CKPT] Gradient checkpointing enabled")
+        logger.info(f"  [CKPT] Check: gradient_checkpointing={unwrapped_transformer.gradient_checkpointing}")
+    
+    # 显存调试日志
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        allocated = torch.cuda.memory_allocated() / 1e9
+        reserved = torch.cuda.memory_reserved() / 1e9
+        logger.info(f"  [MEM] After prepare(): Allocated={allocated:.2f}GB, Reserved={reserved:.2f}GB")
     
     max_train_steps = len(dataloader) * args.num_train_epochs // args.gradient_accumulation_steps
     lr_scheduler = get_scheduler(
