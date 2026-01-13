@@ -481,8 +481,8 @@ def main():
     if args.gradient_checkpointing:
         # 获取原始模型（accelerate 可能包装了一层）
         unwrapped_transformer = accelerator.unwrap_model(transformer)
-        unwrapped_transformer.enable_gradient_checkpointing()
-        logger.info("  [CKPT] Gradient checkpointing enabled (after prepare)")
+        unwrapped_transformer.gradient_checkpointing = True
+        logger.info("  [CKPT] Gradient checkpointing enabled")
     
     max_train_steps = len(dataloader) * args.num_train_epochs // args.gradient_accumulation_steps
     lr_scheduler = get_scheduler(
