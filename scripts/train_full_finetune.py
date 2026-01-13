@@ -305,9 +305,19 @@ def main():
     # =========================================================================
     logger.info("\n[1/6] 加载 Transformer 模型...")
     
-    from zimage_trainer.models.zimage_model import ZImageModel
-    model = ZImageModel.from_pretrained(args.dit, weight_dtype=weight_dtype)
-    transformer = model.transformer.to(accelerator.device)
+    try:
+        from zimage_trainer.models.transformer_z_image import ZImageTransformer2DModel
+        logger.info("  ✓ 使用本地 ZImageTransformer2DModel")
+    except ImportError:
+        from diffusers import ZImageTransformer2DModel
+        logger.warning("  ⚠ 使用 diffusers 默认版本")
+    
+    transformer = ZImageTransformer2DModel.from_pretrained(
+        args.dit,
+        torch_dtype=weight_dtype,
+        local_files_only=True,
+    )
+    transformer = transformer.to(accelerator.device)
     
     # 不冻结模型，直接训练
     transformer.requires_grad_(True)
