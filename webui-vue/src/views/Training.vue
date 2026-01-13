@@ -73,223 +73,33 @@
         </span>
       </div>
       
-      <!-- AC-RF 参数 -->
-      <div class="preview-section">
-        <h4>AC-RF 参数</h4>
+      <!-- 动态渲染预览分组 -->
+      <div class="preview-section" v-for="section in visibleSections" :key="section.title">
+        <h4>{{ section.title }}</h4>
         <div class="preview-grid-3">
-          <div class="preview-item">
-            <span class="label">Turbo 模式</span>
-            <span class="value" :class="{ highlight: currentConfig.acrf?.enable_turbo !== false }">
-              {{ currentConfig.acrf?.enable_turbo !== false ? '✓ 开启' : '关闭' }}
+          <div class="preview-item" v-for="param in section.visibleParams" :key="param.label">
+            <span class="label">{{ param.label }}</span>
+            <span class="value" :class="{ highlight: param.highlight }">
+              {{ formatParamValue(param, currentConfig) }}
             </span>
           </div>
-          <div class="preview-item">
-            <span class="label">Turbo Steps</span>
-            <span class="value">{{ currentConfig.acrf?.turbo_steps ?? 10 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">Shift 模式</span>
-            <span class="value">{{ currentConfig.acrf?.use_dynamic_shift ? 'Dynamic' : 'Fixed' }}</span>
-          </div>
-          <div class="preview-item" v-if="currentConfig.acrf?.use_dynamic_shift">
-            <span class="label">Shift 范围</span>
-            <span class="value">{{ currentConfig.acrf?.base_shift ?? 0.5 }} ~ {{ currentConfig.acrf?.max_shift ?? 1.15 }}</span>
-          </div>
-          <div class="preview-item" v-else>
-            <span class="label">Fixed Shift</span>
-            <span class="value">{{ currentConfig.acrf?.shift ?? 3.0 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">Jitter Scale</span>
-            <span class="value">{{ currentConfig.acrf?.jitter_scale ?? 0.02 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">SNR Gamma</span>
-            <span class="value">{{ currentConfig.acrf?.snr_gamma ?? 5.0 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">SNR Floor</span>
-            <span class="value">{{ currentConfig.acrf?.snr_floor ?? 0.1 }}</span>
-          </div>
-          <div class="preview-item" v-if="currentConfig.acrf?.latent_jitter_scale > 0">
-            <span class="label">Latent Jitter</span>
-            <span class="value">{{ currentConfig.acrf?.latent_jitter_scale }}</span>
-          </div>
-          <div class="preview-item" v-if="currentConfig.acrf?.enable_curvature">
-            <span class="label">曲率惩罚</span>
-            <span class="value highlight">λ={{ currentConfig.acrf?.lambda_curvature }} / {{ currentConfig.acrf?.curvature_interval }}步</span>
-          </div>
         </div>
       </div>
       
-      <!-- LoRA 配置 -->
-      <div class="preview-section">
-        <h4>LoRA 配置</h4>
-        <div class="preview-grid-3">
-          <div class="preview-item">
-            <span class="label">Network Dim</span>
-            <span class="value">{{ currentConfig.network?.dim ?? 8 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">Network Alpha</span>
-            <span class="value">{{ currentConfig.network?.alpha ?? 4 }}</span>
-          </div>
-        </div>
-      </div>
-      
-      <!-- 训练设置 -->
-      <div class="preview-section">
-        <h4>训练设置</h4>
-        <div class="preview-grid-3">
-          <div class="preview-item">
-            <span class="label">输出名称</span>
-            <span class="value highlight">{{ currentConfig.training?.output_name || 'zimage-lora' }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">训练轮数</span>
-            <span class="value">{{ currentConfig.advanced?.num_train_epochs ?? 10 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">保存间隔</span>
-            <span class="value">每 {{ currentConfig.advanced?.save_every_n_epochs ?? 1 }} 轮</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">优化器</span>
-            <span class="value">{{ currentConfig.optimizer?.type || 'AdamW8bit' }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">学习率</span>
-            <span class="value">{{ currentConfig.training?.learning_rate ?? 0.0001 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">Weight Decay</span>
-            <span class="value">{{ currentConfig.training?.weight_decay ?? 0.01 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">调度器</span>
-            <span class="value">{{ currentConfig.training?.lr_scheduler || 'constant' }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">Warmup Steps</span>
-            <span class="value">{{ currentConfig.training?.lr_warmup_steps ?? 0 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">Lambda L1</span>
-            <span class="value">{{ currentConfig.training?.lambda_l1 ?? 1.0 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">Lambda Cosine</span>
-            <span class="value">{{ currentConfig.training?.lambda_cosine ?? 0.1 }}</span>
-          </div>
-          <div class="preview-item" v-if="currentConfig.training?.enable_freq">
-            <span class="label">Lambda Freq</span>
-            <span class="value">{{ currentConfig.training?.lambda_freq ?? 0.3 }}</span>
-          </div>
-          <div class="preview-item" v-if="currentConfig.training?.enable_style">
-            <span class="label">Lambda Style</span>
-            <span class="value">{{ currentConfig.training?.lambda_style ?? 0.3 }}</span>
-          </div>
-          <div class="preview-item" v-if="currentConfig.acrf?.raft_mode">
-            <span class="label">L2 调度</span>
-            <span class="value highlight">{{ getL2ScheduleLabel() }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">损失组合</span>
-            <span class="value highlight">{{ getEnabledLossLabel(currentConfig.training, currentConfig.acrf) }}</span>
-          </div>
-          <div class="preview-item" v-if="currentConfig.lora?.train_adaln || currentConfig.lora?.train_norm || currentConfig.lora?.train_single_stream">
-            <span class="label">LoRA 高级</span>
-            <span class="value highlight">{{ getLoraAdvancedLabel() }}</span>
-          </div>
-        </div>
-        <!-- 频域感知损失参数 -->
-        <div class="preview-grid-3" v-if="currentConfig.training?.enable_freq">
-          <div class="preview-item">
-            <span class="label">Alpha HF (高频)</span>
-            <span class="value">{{ currentConfig.training?.alpha_hf ?? 1.0 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">Beta LF (低频)</span>
-            <span class="value">{{ currentConfig.training?.beta_lf ?? 0.2 }}</span>
-          </div>
-        </div>
-        <!-- 风格学习参数 -->
-        <div class="preview-grid-3" v-if="currentConfig.training?.enable_style">
-          <div class="preview-item">
-            <span class="label">λ Light (光影)</span>
-            <span class="value">{{ currentConfig.training?.lambda_light ?? 0.5 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">λ Color (色调)</span>
-            <span class="value">{{ currentConfig.training?.lambda_color ?? 0.3 }}</span>
-          </div>
-        </div>
-      </div>
-      
-      <!-- 数据集配置 -->
-      <div class="preview-section">
-        <h4>数据集配置</h4>
-        <div class="preview-grid-3">
-          <div class="preview-item">
-            <span class="label">批大小</span>
-            <span class="value">{{ currentConfig.dataset?.batch_size ?? 1 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">打乱数据</span>
-            <span class="value">{{ currentConfig.dataset?.shuffle ? '是' : '否' }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">启用分桶</span>
-            <span class="value">{{ currentConfig.dataset?.enable_bucket ? '是' : '否' }}</span>
-          </div>
-          <div class="preview-item" v-if="currentConfig.dataset?.drop_text_ratio > 0">
-            <span class="label">Drop Text</span>
-            <span class="value highlight">{{ (currentConfig.dataset?.drop_text_ratio * 100).toFixed(0) }}%</span>
-          </div>
-        </div>
-        <div class="datasets-list" v-if="currentConfig.dataset?.datasets?.length > 0">
+      <!-- 数据集列表（特殊处理，不适合 Schema） -->
+      <div class="preview-section" v-if="currentConfig.dataset?.datasets?.length > 0">
+        <h4>数据集</h4>
+        <div class="datasets-list">
           <div v-for="(ds, idx) in currentConfig.dataset.datasets" :key="idx" class="dataset-tag">
             <span class="ds-path">{{ getDatasetName(ds.cache_directory) }}</span>
             <span class="ds-repeat">×{{ ds.num_repeats || 1 }}</span>
           </div>
         </div>
-        <div class="no-datasets" v-else>
-          <span>⚠️ 未配置数据集</span>
-        </div>
       </div>
-      
-      <!-- 高级选项 -->
-      <div class="preview-section">
-        <h4>高级选项</h4>
-        <div class="preview-grid-3">
-          <div class="preview-item">
-            <span class="label">混合精度</span>
-            <span class="value">{{ currentConfig.advanced?.mixed_precision || 'bf16' }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">梯度累积</span>
-            <span class="value">{{ currentConfig.advanced?.gradient_accumulation_steps ?? 4 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">Max Grad Norm</span>
-            <span class="value">{{ currentConfig.advanced?.max_grad_norm ?? 1.0 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">梯度检查点</span>
-            <span class="value">{{ currentConfig.advanced?.gradient_checkpointing ? '是' : '否' }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">Blocks to Swap</span>
-            <span class="value">{{ currentConfig.advanced?.blocks_to_swap ?? 0 }}</span>
-          </div>
-          <div class="preview-item">
-            <span class="label">随机种子</span>
-            <span class="value">{{ currentConfig.advanced?.seed ?? 42 }}</span>
-          </div>
-          <div class="preview-item" v-if="currentConfig.advanced?.num_gpus > 1 || currentConfig.advanced?.gpu_ids">
-            <span class="label">GPU 配置</span>
-            <span class="value highlight">{{ getGpuConfigLabel() }}</span>
-          </div>
+      <div class="preview-section" v-else>
+        <h4>数据集</h4>
+        <div class="no-datasets">
+          <span>⚠️ 未配置数据集</span>
         </div>
       </div>
     </div>
@@ -368,6 +178,160 @@ const logs = computed(() => wsStore.logs)
 // 从后端加载的当前配置（原始结构，不转换）
 const currentConfig = ref<any>(null)
 
+// ============================================================================
+// 动态预览 Schema 定义
+// ============================================================================
+interface PreviewParam {
+  label: string
+  path: string
+  defaultValue?: any
+  format?: 'plain' | 'boolean' | 'percent' | 'custom'
+  highlight?: boolean
+  showIf?: (config: any) => boolean
+  valueFormatter?: (value: any, config: any) => string
+}
+
+interface PreviewSection {
+  title: string
+  showIf?: (config: any) => boolean
+  params: PreviewParam[]
+}
+
+const previewSchema: PreviewSection[] = [
+  {
+    title: 'AC-RF 参数',
+    showIf: (c) => c.training_type !== 'controlnet',
+    params: [
+      { label: 'Turbo 模式', path: 'acrf.enable_turbo', format: 'boolean', defaultValue: true, highlight: true },
+      { label: 'Turbo Steps', path: 'acrf.turbo_steps', defaultValue: 10 },
+      { label: 'Shift 模式', path: 'acrf.use_dynamic_shift', format: 'custom',
+        valueFormatter: (v) => v ? 'Dynamic' : 'Fixed' },
+      { label: 'Shift 范围', path: 'acrf.base_shift', format: 'custom',
+        showIf: (c) => c.acrf?.use_dynamic_shift,
+        valueFormatter: (_, c) => `${c.acrf?.base_shift ?? 0.5} ~ ${c.acrf?.max_shift ?? 1.15}` },
+      { label: 'Fixed Shift', path: 'acrf.shift', defaultValue: 3.0,
+        showIf: (c) => !c.acrf?.use_dynamic_shift },
+      { label: 'SNR Gamma', path: 'acrf.snr_gamma', defaultValue: 5.0 },
+      { label: 'SNR Floor', path: 'acrf.snr_floor', defaultValue: 0.1 },
+      { label: 'Latent Jitter', path: 'acrf.latent_jitter_scale',
+        showIf: (c) => (c.acrf?.latent_jitter_scale ?? 0) > 0 },
+      { label: '曲率惩罚', path: 'acrf.enable_curvature', format: 'custom', highlight: true,
+        showIf: (c) => c.acrf?.enable_curvature,
+        valueFormatter: (_, c) => `λ=${c.acrf?.lambda_curvature} / ${c.acrf?.curvature_interval}步` },
+    ]
+  },
+  {
+    title: 'LoRA 配置',
+    showIf: (c) => c.training_type === 'lora',
+    params: [
+      { label: 'Network Dim', path: 'network.dim', defaultValue: 8 },
+      { label: 'Network Alpha', path: 'network.alpha', defaultValue: 4 },
+      { label: '继续训练', path: 'lora.resume_training', format: 'boolean',
+        showIf: (c) => c.lora?.resume_training },
+      { label: 'LoRA 高级', path: 'lora.train_adaln', format: 'custom', highlight: true,
+        showIf: (c) => c.lora?.train_adaln || c.lora?.train_norm,
+        valueFormatter: (_, c) => {
+          const parts: string[] = []
+          if (c.lora?.train_adaln) parts.push('AdaLN')
+          if (c.lora?.train_norm) parts.push('Norm')
+          return parts.length > 0 ? `+${parts.join('+')}` : ''
+        }
+      },
+    ]
+  },
+  {
+    title: 'ControlNet 配置',
+    showIf: (c) => c.training_type === 'controlnet',
+    params: [
+      { label: 'Conditioning Scale', path: 'controlnet.conditioning_scale', defaultValue: 0.75 },
+      { label: '加载模式', path: 'controlnet.resume_from', format: 'custom',
+        valueFormatter: (v) => v ? '继续训练' : '新建模型' },
+    ]
+  },
+  {
+    title: '训练设置',
+    params: [
+      { label: '输出名称', path: 'training.output_name', defaultValue: 'zimage-lora', highlight: true },
+      { label: '训练轮数', path: 'advanced.num_train_epochs', defaultValue: 10 },
+      { label: '保存间隔', path: 'advanced.save_every_n_epochs', defaultValue: 1, format: 'custom',
+        valueFormatter: (v) => `每 ${v ?? 1} 轮` },
+      { label: '优化器', path: 'optimizer.type', defaultValue: 'AdamW8bit' },
+      { label: '学习率', path: 'training.learning_rate', defaultValue: 0.0001 },
+      { label: '调度器', path: 'training.lr_scheduler', defaultValue: 'constant' },
+      { label: 'Warmup Steps', path: 'training.lr_warmup_steps', defaultValue: 0,
+        showIf: (c) => c.training?.lr_scheduler !== 'constant' },
+      { label: 'Lambda L1', path: 'training.lambda_l1', defaultValue: 1.0,
+        showIf: (c) => c.training_type !== 'controlnet' },
+      { label: 'Lambda Cosine', path: 'training.lambda_cosine', defaultValue: 0.1,
+        showIf: (c) => c.training_type !== 'controlnet' },
+      { label: 'L2 混合', path: 'acrf.raft_mode', format: 'boolean', highlight: true,
+        showIf: (c) => c.acrf?.raft_mode && c.training_type !== 'controlnet' },
+    ]
+  },
+  {
+    title: '数据集配置',
+    params: [
+      { label: '批大小', path: 'dataset.batch_size', defaultValue: 1 },
+      { label: '打乱数据', path: 'dataset.shuffle', format: 'boolean' },
+      { label: '启用分桶', path: 'dataset.enable_bucket', format: 'boolean' },
+      { label: 'Drop Text', path: 'dataset.drop_text_ratio', format: 'percent', highlight: true,
+        showIf: (c) => (c.dataset?.drop_text_ratio ?? 0) > 0 },
+    ]
+  },
+  {
+    title: '高级选项',
+    params: [
+      { label: '混合精度', path: 'advanced.mixed_precision', defaultValue: 'bf16' },
+      { label: '梯度累积', path: 'advanced.gradient_accumulation_steps', defaultValue: 4 },
+      { label: '梯度检查点', path: 'advanced.gradient_checkpointing', format: 'boolean' },
+      { label: 'Blocks to Swap', path: 'advanced.blocks_to_swap', defaultValue: 0 },
+      { label: '随机种子', path: 'advanced.seed', defaultValue: 42 },
+      { label: 'GPU 数量', path: 'advanced.num_gpus', defaultValue: 1,
+        showIf: (c) => (c.advanced?.num_gpus ?? 1) > 1 },
+    ]
+  },
+]
+
+// 工具函数：按路径获取嵌套对象的值
+function getValueByPath(obj: any, path: string): any {
+  if (!obj || !path) return undefined
+  return path.split('.').reduce((acc, key) => acc?.[key], obj)
+}
+
+// 工具函数：格式化参数值
+function formatParamValue(param: PreviewParam, config: any): string {
+  const value = getValueByPath(config, param.path) ?? param.defaultValue
+  
+  if (param.valueFormatter) {
+    return param.valueFormatter(value, config)
+  }
+  
+  switch (param.format) {
+    case 'boolean':
+      return value ? '✓ 开启' : '关闭'
+    case 'percent':
+      return `${((value ?? 0) * 100).toFixed(0)}%`
+    case 'custom':
+      return String(value ?? '')
+    default:
+      return String(value ?? '-')
+  }
+}
+
+// 计算属性：过滤后的可见分组
+const visibleSections = computed(() => {
+  if (!currentConfig.value) return []
+  return previewSchema
+    .filter(section => !section.showIf || section.showIf(currentConfig.value))
+    .map(section => ({
+      ...section,
+      visibleParams: section.params.filter(
+        param => !param.showIf || param.showIf(currentConfig.value)
+      )
+    }))
+    .filter(section => section.visibleParams.length > 0)
+})
+
 const progress = computed(() => trainingStore.progress)
 const isRunning = computed(() => trainingStore.progress.isRunning)
 const isLoading = computed(() => trainingStore.progress.isLoading)
@@ -424,71 +388,6 @@ function getModelTypeLabel(type: string | undefined): string {
   return '⚡ Z-Image'
 }
 
-function getEnabledLossLabel(training: any, acrf?: any): string {
-  if (!training) return 'L1 + Cosine'
-  const parts: string[] = []
-  
-  // 只有当权重 > 0 时才显示对应损失
-  if (training.lambda_l1 && training.lambda_l1 > 0) parts.push('L1')
-  if (training.lambda_cosine && training.lambda_cosine > 0) parts.push('Cosine')
-  if (training.enable_freq) parts.push('Freq')
-  if (training.enable_style) parts.push('Style')
-  if (acrf?.raft_mode) parts.push('L2')
-  
-  if (parts.length === 0) return '无'
-  return parts.join(' + ')
-}
-
-function getL2ScheduleLabel(): string {
-  const acrf = currentConfig.value?.acrf
-  if (!acrf?.raft_mode) return '未启用'
-  
-  const mode = acrf.l2_schedule_mode || 'constant'
-  const initial = acrf.l2_initial_ratio ?? 0.3
-  const final = acrf.l2_final_ratio ?? initial
-  
-  const modeLabels: Record<string, string> = {
-    'constant': `固定 ${(initial * 100).toFixed(0)}%`,
-    'linear_increase': `${(initial * 100).toFixed(0)}% → ${(final * 100).toFixed(0)}%`,
-    'linear_decrease': `${(initial * 100).toFixed(0)}% → ${(final * 100).toFixed(0)}%`,
-    'step': `阶梯 ${(initial * 100).toFixed(0)}%→${(final * 100).toFixed(0)}%`
-  }
-  
-  let label = modeLabels[mode] || `${(initial * 100).toFixed(0)}%`
-  
-  if (acrf.l2_include_anchor) {
-    const anchorRatio = acrf.l2_anchor_ratio ?? 0.3
-    label += ` (+锚点 ${(anchorRatio * 100).toFixed(0)}%)`
-  }
-  
-  return label
-}
-
-function getLoraAdvancedLabel(): string {
-  const lora = currentConfig.value?.lora || {}
-  const parts: string[] = []
-  
-  if (lora.train_adaln) parts.push('AdaLN')
-  if (lora.train_norm) parts.push('Norm')
-  if (lora.train_single_stream) parts.push('单流')
-  
-  return parts.length > 0 ? `+${parts.join('+')}` : ''
-}
-
-function getGpuConfigLabel(): string {
-  const advanced = currentConfig.value?.advanced || {}
-  const numGpus = advanced.num_gpus || 1
-  const gpuIds = advanced.gpu_ids || ''
-  
-  if (numGpus > 1 && gpuIds) {
-    return `${numGpus} GPUs (${gpuIds})`
-  } else if (numGpus > 1) {
-    return `${numGpus} GPUs`
-  } else if (gpuIds) {
-    return `GPU ${gpuIds}`
-  }
-  return '单卡'
-}
 
 function formatTime(seconds: number): string {
   if (seconds <= 0) return '--:--:--'
