@@ -247,8 +247,8 @@
           </div>
         </el-collapse-item>
 
-        <!-- 3. LoRA 配置 -->
-        <el-collapse-item name="lora">
+        <!-- 3. LoRA 配置 (仅 LoRA 训练模式显示) -->
+        <el-collapse-item name="lora" v-if="config.training_type === 'lora'">
           <template #title>
             <div class="collapse-title">
               <el-icon><Grid /></el-icon>
@@ -345,8 +345,8 @@
           <div class="collapse-content">
             <div class="subsection-label">输出设置 (OUTPUT)</div>
             <div class="form-row-full">
-              <label>LoRA 输出名称</label>
-              <el-input v-model="config.training.output_name" placeholder="zimage-lora" />
+              <label>{{ outputNameLabel }}</label>
+              <el-input v-model="config.training.output_name" :placeholder="outputNamePlaceholder" />
             </div>
             
             <div class="subsection-label">训练控制 (TRAINING CONTROL)</div>
@@ -1207,6 +1207,28 @@ const trainingTypeTagType = computed((): TagType => {
   const type = trainingTypes.value.find(t => t.value === config.value.training_type)
   return type?.tagType || 'success'
 })
+
+// 输出名称标签（根据训练类型变化）
+const outputNameLabel = computed(() => {
+  switch (config.value.training_type) {
+    case 'lora': return 'LoRA 输出名称'
+    case 'finetune': return 'Finetune 输出名称'
+    case 'controlnet': return 'ControlNet 输出名称'
+    default: return '输出名称'
+  }
+})
+
+const outputNamePlaceholder = computed(() => {
+  switch (config.value.training_type) {
+    case 'lora': return 'zimage-lora'
+    case 'finetune': return 'zimage-finetune'
+    case 'controlnet': return 'zimage-controlnet'
+    default: return 'output'
+  }
+})
+
+// ControlNet 训练时需要隐藏的参数区块
+const isControlNetMode = computed(() => config.value.training_type === 'controlnet')
 
 // 默认配置结构
 function getDefaultConfig() {
