@@ -211,6 +211,7 @@ const previewSchema: PreviewSection[] = [
         valueFormatter: (_, c) => `${c.acrf?.base_shift ?? 0.5} ~ ${c.acrf?.max_shift ?? 1.15}` },
       { label: 'Fixed Shift', path: 'acrf.shift', defaultValue: 3.0,
         showIf: (c) => !c.acrf?.use_dynamic_shift },
+      { label: 'Jitter Scale', path: 'acrf.jitter_scale', defaultValue: 0.02 },
       { label: 'SNR Gamma', path: 'acrf.snr_gamma', defaultValue: 5.0 },
       { label: 'SNR Floor', path: 'acrf.snr_floor', defaultValue: 0.1 },
       { label: 'Latent Jitter', path: 'acrf.latent_jitter_scale',
@@ -260,12 +261,54 @@ const previewSchema: PreviewSection[] = [
       { label: '调度器', path: 'training.lr_scheduler', defaultValue: 'constant' },
       { label: 'Warmup Steps', path: 'training.lr_warmup_steps', defaultValue: 0,
         showIf: (c) => c.training?.lr_scheduler !== 'constant' },
+      { label: 'Num Cycles', path: 'training.lr_num_cycles', defaultValue: 1,
+        showIf: (c) => c.training?.lr_scheduler === 'cosine_with_restarts' },
       { label: 'Lambda L1', path: 'training.lambda_l1', defaultValue: 1.0,
         showIf: (c) => c.training_type !== 'controlnet' },
       { label: 'Lambda Cosine', path: 'training.lambda_cosine', defaultValue: 0.1,
         showIf: (c) => c.training_type !== 'controlnet' },
-      { label: 'L2 混合', path: 'acrf.raft_mode', format: 'boolean', highlight: true,
-        showIf: (c) => c.acrf?.raft_mode && c.training_type !== 'controlnet' },
+    ]
+  },
+  {
+    title: 'CFG 训练',
+    showIf: (c) => c.acrf?.cfg_training && c.training_type !== 'controlnet',
+    params: [
+      { label: 'CFG 训练', path: 'acrf.cfg_training', format: 'boolean', highlight: true },
+      { label: 'CFG Scale', path: 'acrf.cfg_scale', defaultValue: 7.5 },
+      { label: 'CFG 训练比例', path: 'acrf.cfg_training_ratio', format: 'percent', defaultValue: 0.3 },
+    ]
+  },
+  {
+    title: '频域增强',
+    showIf: (c) => c.training?.enable_freq && c.training_type !== 'controlnet',
+    params: [
+      { label: '频域增强', path: 'training.enable_freq', format: 'boolean', highlight: true },
+      { label: 'λ Freq', path: 'training.lambda_freq', defaultValue: 0.3 },
+      { label: 'α 高频 (HF)', path: 'training.alpha_hf', defaultValue: 1.0 },
+      { label: 'β 低频 (LF)', path: 'training.beta_lf', defaultValue: 0.2 },
+    ]
+  },
+  {
+    title: '风格学习',
+    showIf: (c) => c.training?.enable_style && c.training_type !== 'controlnet',
+    params: [
+      { label: '风格学习', path: 'training.enable_style', format: 'boolean', highlight: true },
+      { label: 'λ Style', path: 'training.lambda_style', defaultValue: 0.3 },
+      { label: 'λ Light (光影)', path: 'training.lambda_light', defaultValue: 0.5 },
+      { label: 'λ Color (色调)', path: 'training.lambda_color', defaultValue: 0.3 },
+    ]
+  },
+  {
+    title: 'L2 混合损失',
+    showIf: (c) => c.acrf?.raft_mode && c.training_type !== 'controlnet',
+    params: [
+      { label: 'L2 混合', path: 'acrf.raft_mode', format: 'boolean', highlight: true },
+      { label: '调度模式', path: 'acrf.l2_schedule_mode', defaultValue: 'constant' },
+      { label: 'L2 起始比例', path: 'acrf.l2_initial_ratio', format: 'percent', defaultValue: 0.3 },
+      { label: 'L2 结束比例', path: 'acrf.l2_final_ratio', format: 'percent', defaultValue: 0.3,
+        showIf: (c) => c.acrf?.l2_schedule_mode !== 'constant' },
+      { label: 'L2 包含锚点', path: 'acrf.l2_include_anchor', format: 'boolean',
+        showIf: (c) => c.acrf?.l2_include_anchor },
     ]
   },
   {
@@ -288,6 +331,8 @@ const previewSchema: PreviewSection[] = [
       { label: '随机种子', path: 'advanced.seed', defaultValue: 42 },
       { label: 'GPU 数量', path: 'advanced.num_gpus', defaultValue: 1,
         showIf: (c) => (c.advanced?.num_gpus ?? 1) > 1 },
+      { label: 'GPU IDs', path: 'advanced.gpu_ids',
+        showIf: (c) => c.advanced?.gpu_ids },
     ]
   },
 ]
