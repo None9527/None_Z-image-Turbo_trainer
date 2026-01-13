@@ -336,9 +336,10 @@ def main():
     # 不冻结模型，直接训练
     transformer.requires_grad_(True)
     
-    if args.gradient_checkpointing:
-        transformer.enable_gradient_checkpointing()
-        logger.info("  [CKPT] Gradient checkpointing enabled")
+    # 先不启用 gradient checkpointing，等 accelerator.prepare() 后再启用
+    # if args.gradient_checkpointing:
+    #     transformer.enable_gradient_checkpointing()
+    #     logger.info("  [CKPT] Gradient checkpointing enabled")
     
     transformer.train()
     
@@ -475,6 +476,13 @@ def main():
     
     # Prepare with accelerator (全量微调必须包含 transformer)
     transformer, optimizer, dataloader = accelerator.prepare(transformer, optimizer, dataloader)
+    
+    # 在 accelerator.prepare() 之后启用 gradient checkpointing
+    if args.gradient_checkpointing:
+        # 获取原始模型（accelerate 可能包装了一层）
+        unwrapped_transformer = accelerator.unwrap_model(transformer)
+        unwrapped_transformer.enable_gradient_checkpointing()
+        logger.info("  [CKPT] Gradient checkpointing enabled (after prepare)")
     
     max_train_steps = len(dataloader) * args.num_train_epochs // args.gradient_accumulation_steps
     lr_scheduler = get_scheduler(
