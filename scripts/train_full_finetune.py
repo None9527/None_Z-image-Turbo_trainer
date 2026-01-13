@@ -80,6 +80,11 @@ def parse_args():
     parser.add_argument("--save_every_n_epochs", type=int, default=None)
     parser.add_argument("--gradient_checkpointing", type=bool, default=True)
     
+    # Finetune 模块选择
+    parser.add_argument("--trainable_modules", type=str, default="attention+mlp+adaln",
+                       help="可选: all, attention, mlp, attention+mlp, attention+mlp+adaln")
+    parser.add_argument("--freeze_embeddings", type=bool, default=True)
+    
     # AC-RF / Turbo
     parser.add_argument("--turbo_steps", type=int, default=10)
     parser.add_argument("--shift", type=float, default=3.0)
@@ -273,7 +278,81 @@ def parse_args():
         args.lr_warmup_steps = training_cfg.get("lr_warmup_steps", args.lr_warmup_steps)
         args.lr_num_cycles = training_cfg.get("lr_num_cycles", args.lr_num_cycles)
         
+        # Finetune 模块选择
+        finetune_cfg = config.get("finetune", {})
+        args.trainable_modules = finetune_cfg.get("trainable_modules", 
+                                   training_cfg.get("trainable_modules", args.trainable_modules))
+        args.freeze_embeddings = finetune_cfg.get("freeze_embeddings", 
+                                   training_cfg.get("freeze_embeddings", args.freeze_embeddings))
     return args
+
+
+def get_trainable_parameters(transformer, trainable_modules: str, freeze_embeddings: bool = True):
+    """
+    根据配置返回可训练的参数
+    
+    Args:
+        trainable_modules: 可选值
+            - "all": 全部参数
+            - "attention": 仅 Attention 层
+            - "mlp": 仅 MLP/FFN 层
+            - "attention+mlp": Attention + MLP
+            - "attention+mlp+adaln": Attention + MLP + AdaLN (推荐)
+        freeze_embeddings: 是否冻结 embedding 层
+    """
+    # 先冻结所有参数
+    transformer.requires_grad_(False)
+    
+    trainable_params = []
+    trainable_count = 0
+    frozen_count = 0
+    
+    # 解析 trainable_modules
+    modules_to_train = set(trainable_modules.lower().replace(' ', '').split('+'))
+    train_all = 'all' in modules_to_train
+    train_attention = 'attention' in modules_to_train or train_all
+    train_mlp = 'mlp' in modules_to_train or train_all
+    train_adaln = 'adaln' in modules_to_train or train_all
+    train_norm = 'norm' in modules_to_train or train_all
+    
+    for name, param in transformer.named_parameters():
+        should_train = False
+        name_lower = name.lower()
+        
+        # Attention 层: q_proj, k_proj, v_proj, o_proj, to_q, to_k, to_v, to_out
+        if train_attention:
+            if any(key in name_lower for key in ['attn', 'attention', 'q_proj', 'k_proj', 'v_proj', 'o_proj', 'to_q', 'to_k', 'to_v', 'to_out']):
+                should_train = True
+        
+        # MLP 层: mlp, fc1, fc2, ffn, feed_forward, linear1, linear2
+        if train_mlp:
+            if any(key in name_lower for key in ['mlp', 'fc1', 'fc2', 'ffn', 'feed_forward', 'linear1', 'linear2']):
+                should_train = True
+        
+        # AdaLN 层: adaln, scale_shift, modulation, t_embedder (时间步相关)
+        if train_adaln:
+            if any(key in name_lower for key in ['adaln', 'scale_shift', 'modulation', 't_embedder', 'time_embed']):
+                should_train = True
+        
+        # Norm 层 (非 AdaLN)
+        if train_norm:
+            if any(key in name_lower for key in ['norm', 'ln', 'layer_norm', 'layernorm', 'rmsnorm']):
+                if not any(key in name_lower for key in ['adaln']):
+                    should_train = True
+        
+        # 冻结 embedding 层
+        if freeze_embeddings:
+            if any(key in name_lower for key in ['embed', 'embedding', 'pos_embed', 'patch_embed', 'x_embedder', 'cap_embedder']):
+                should_train = False
+        
+        if should_train:
+            param.requires_grad = True
+            trainable_params.append(param)
+            trainable_count += param.numel()
+        else:
+            frozen_count += param.numel()
+    
+    return trainable_params, frozen_count, trainable_count
 
 
 def save_transformer_weights(transformer, path: str, dtype=torch.bfloat16):
@@ -333,14 +412,30 @@ def main():
     )
     transformer = transformer.to(accelerator.device)
     
-    # 不冻结模型，直接训练
-    transformer.requires_grad_(True)
-    transformer.train()
+    # =========================================================================
+    # 2. 选择性模块训练
+    # =========================================================================
+    logger.info(f"\n[2/6] 配置可训练模块 ({args.trainable_modules})...")
     
-    # 统计可训练参数
-    trainable_params = [p for p in transformer.parameters() if p.requires_grad]
-    param_count = sum(p.numel() for p in trainable_params)
-    logger.info(f"  ✓ 可训练参数: {param_count:,} ({param_count/1e9:.2f}B)")
+    trainable_params, frozen_count, trainable_count = get_trainable_parameters(
+        transformer, 
+        args.trainable_modules, 
+        args.freeze_embeddings
+    )
+    
+    total_params = frozen_count + trainable_count
+    logger.info(f"  ✓ 可训练: {trainable_count:,} ({trainable_count/1e6:.2f}M, {100*trainable_count/total_params:.1f}%)")
+    logger.info(f"  ✓ 冻结: {frozen_count:,} ({frozen_count/1e6:.2f}M, {100*frozen_count/total_params:.1f}%)")
+    
+    # 先启用 gradient checkpointing (在 prepare 之前)
+    if args.gradient_checkpointing:
+        if hasattr(transformer, 'enable_gradient_checkpointing'):
+            transformer.enable_gradient_checkpointing()
+        else:
+            transformer.gradient_checkpointing = True
+        logger.info("  [CKPT] Gradient checkpointing enabled")
+    
+    transformer.train()
     
     # =========================================================================
     # 2. Block Swapper (可选)
@@ -468,29 +563,8 @@ def main():
     
     logger.info(f"  ✓ {args.optimizer_type}, LR={args.learning_rate}")
     
-    # Prepare with accelerator (全量微调必须包含 transformer)
-    transformer, optimizer, dataloader = accelerator.prepare(transformer, optimizer, dataloader)
-    
-    # 在 accelerator.prepare() 之后重新设置 block_swapper（prepare 会包装模型）
-    if block_swapper is not None:
-        unwrapped_transformer = accelerator.unwrap_model(transformer)
-        unwrapped_transformer.set_block_swapper(block_swapper)
-        logger.info("  [SWAP] Block Swapper re-attached after accelerator.prepare()")
-        # 打印实际状态
-        stats = block_swapper.get_stats()
-        logger.info(f"  [SWAP] 状态: GPU={stats['layers_on_gpu']}层, CPU={stats['layers_on_cpu']}层")
-    
-    # 在 accelerator.prepare() 之后启用 gradient checkpointing
-    if args.gradient_checkpointing:
-        # 获取原始模型（accelerate 可能包装了一层）
-        unwrapped_transformer = accelerator.unwrap_model(transformer)
-        # 使用标准方法启用 gradient checkpointing（与 LoRA 脚本一致）
-        if hasattr(unwrapped_transformer, 'enable_gradient_checkpointing'):
-            unwrapped_transformer.enable_gradient_checkpointing()
-        else:
-            unwrapped_transformer.gradient_checkpointing = True
-        logger.info("  [CKPT] Gradient checkpointing enabled")
-        logger.info(f"  [CKPT] Check: gradient_checkpointing={unwrapped_transformer.gradient_checkpointing}")
+    # Prepare with accelerator (不包装 transformer，减少显存开销)
+    optimizer, dataloader = accelerator.prepare(optimizer, dataloader)
     
     # 显存调试日志
     if torch.cuda.is_available():
