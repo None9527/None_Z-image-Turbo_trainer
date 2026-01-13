@@ -547,15 +547,29 @@ async function startTraining() {
     return
   }
   
-  // 检查名称是否已存在（强制唯一）
+  // 检查名称是否已存在
   try {
     const runsRes = await axios.get('/api/training/runs')
     const existingRuns = runsRes.data.runs || []
-    const exists = existingRuns.some((r: any) => r.name === outputName)
+    const existingRun = existingRuns.find((r: any) => r.name === outputName)
     
-    if (exists) {
-      ElMessage.error(`训练记录 "${outputName}" 已存在，请修改输出名称后重试`)
-      return
+    if (existingRun) {
+      // 询问用户是否覆盖
+      try {
+        await ElMessageBox.confirm(
+          `训练记录 "${outputName}" 已存在，是否覆盖？\n\n覆盖将删除现有的 TensorBoard 日志。`,
+          '覆盖确认',
+          { confirmButtonText: '覆盖', cancelButtonText: '取消', type: 'warning' }
+        )
+        
+        // 用户选择覆盖，删除现有日志
+        addLog(`正在删除现有日志: ${outputName}...`, 'warning')
+        await axios.delete(`/api/training/runs/${outputName}`)
+        addLog(`已删除日志: ${outputName}`, 'success')
+      } catch {
+        // 用户取消
+        return
+      }
     }
   } catch (e) {
     console.warn('无法检查训练记录:', e)

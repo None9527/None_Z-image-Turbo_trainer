@@ -799,6 +799,27 @@ async def list_training_runs():
         raise HTTPException(status_code=500, detail=f"扫描训练记录失败: {str(e)}")
 
 
+@router.delete("/runs/{run_name}")
+async def delete_training_run(run_name: str):
+    """删除指定训练记录的 TensorBoard 日志
+
+    Args:
+        run_name: 训练记录名称
+    """
+    import shutil
+    
+    logs_dir = OUTPUT_BASE_DIR / "logs" / run_name
+    
+    if not logs_dir.exists():
+        raise HTTPException(status_code=404, detail=f"训练记录 '{run_name}' 不存在")
+    
+    try:
+        shutil.rmtree(logs_dir)
+        return {"message": f"成功删除训练记录: {run_name}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+
+
 @router.get("/scalars")
 async def get_training_scalars(run: str = "", tag: str = "train/loss"):
     """获取指定训练记录的标量数据
