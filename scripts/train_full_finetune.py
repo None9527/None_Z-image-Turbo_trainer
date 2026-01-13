@@ -473,8 +473,8 @@ def main():
     
     logger.info(f"  ✓ {args.optimizer_type}, LR={args.learning_rate}")
     
-    # Prepare with accelerator
-    optimizer, dataloader, _ = accelerator.prepare(optimizer, dataloader, None)
+    # Prepare with accelerator (全量微调必须包含 transformer)
+    transformer, optimizer, dataloader = accelerator.prepare(transformer, optimizer, dataloader)
     
     max_train_steps = len(dataloader) * args.num_train_epochs // args.gradient_accumulation_steps
     lr_scheduler = get_scheduler(
