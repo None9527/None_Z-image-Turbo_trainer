@@ -484,7 +484,11 @@ def main():
     if args.gradient_checkpointing:
         # 获取原始模型（accelerate 可能包装了一层）
         unwrapped_transformer = accelerator.unwrap_model(transformer)
-        unwrapped_transformer.gradient_checkpointing = True
+        # 使用标准方法启用 gradient checkpointing（与 LoRA 脚本一致）
+        if hasattr(unwrapped_transformer, 'enable_gradient_checkpointing'):
+            unwrapped_transformer.enable_gradient_checkpointing()
+        else:
+            unwrapped_transformer.gradient_checkpointing = True
         logger.info("  [CKPT] Gradient checkpointing enabled")
     
     max_train_steps = len(dataloader) * args.num_train_epochs // args.gradient_accumulation_steps
@@ -553,19 +557,21 @@ def main():
                     latents, noise, jitter_scale=args.jitter_scale, use_anchor=args.enable_turbo
                 )
                 
-                # Forward pass
-                model_input = noisy_latents.unsqueeze(2)
-                if args.gradient_checkpointing:
-                    model_input.requires_grad_(True)
-                model_input_list = list(model_input.unbind(dim=0))
+                # Forward pass (直接批量处理，避免 unbind/stack 的显存开销)
+                model_input = noisy_latents.unsqueeze(2)  # (B, C, 1, H, W)
                 t_norm = (1000 - timesteps) / 1000.0
                 
+                # 直接调用 transformer，不使用 unbind
                 pred_list = transformer(
-                    x=model_input_list,
+                    x=model_input,
                     t=t_norm.to(dtype=weight_dtype),
                     cap_feats=vl_embed,
                 )[0]
-                pred = -torch.stack(pred_list, dim=0).squeeze(2)
+                # pred_list 可能是 list 或 tensor，统一处理
+                if isinstance(pred_list, list):
+                    pred = -torch.stack(pred_list, dim=0).squeeze(2)
+                else:
+                    pred = -pred_list.squeeze(2)
                 
                 # Compute losses
                 snr_weights = compute_snr_weights(
@@ -604,8 +610,7 @@ def main():
                 accumulated_loss += total_loss.detach().float().item()
                 accumulation_count += 1
                 
-                # Backward
-                total_loss = total_loss.float()
+                # Backward (保持 bf16，避免不必要的 dtype 转换)
                 accelerator.backward(total_loss)
             
             # 梯度累积完成后执行优化步骤 (在 accumulate 块外)
