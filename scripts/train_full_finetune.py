@@ -477,6 +477,12 @@ def main():
     # Prepare with accelerator (全量微调必须包含 transformer)
     transformer, optimizer, dataloader = accelerator.prepare(transformer, optimizer, dataloader)
     
+    # 在 accelerator.prepare() 之后重新设置 block_swapper（prepare 会包装模型）
+    if block_swapper is not None:
+        unwrapped_transformer = accelerator.unwrap_model(transformer)
+        unwrapped_transformer.set_block_swapper(block_swapper)
+        logger.info("  [SWAP] Block Swapper re-attached after accelerator.prepare()")
+    
     # 在 accelerator.prepare() 之后启用 gradient checkpointing
     if args.gradient_checkpointing:
         # 获取原始模型（accelerate 可能包装了一层）
