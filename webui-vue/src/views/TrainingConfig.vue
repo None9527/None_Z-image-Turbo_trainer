@@ -152,22 +152,7 @@
                 </el-alert>
               </template>
               
-              <div class="control-row" style="margin-top: 16px">
-                <span class="label">
-                  控制类型 (可多选)
-                  <el-tooltip content="选择要训练的控制类型，可同时训练多种" placement="top">
-                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-                <el-checkbox-group v-model="config.controlnet.control_types">
-                  <el-checkbox label="canny">Canny 边缘</el-checkbox>
-                  <el-checkbox label="depth">Depth 深度</el-checkbox>
-                  <el-checkbox label="pose">Pose 姿态</el-checkbox>
-                  <el-checkbox label="normal">Normal 法线</el-checkbox>
-                  <el-checkbox label="lineart">LineArt 线稿</el-checkbox>
-                  <el-checkbox label="seg">Seg 分割</el-checkbox>
-                </el-checkbox-group>
-              </div>
+
               
               <div class="control-row">
                 <span class="label">

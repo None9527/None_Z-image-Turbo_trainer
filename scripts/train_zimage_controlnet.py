@@ -66,8 +66,7 @@ def parse_args():
     parser.add_argument("--vae", type=str, default=None, help="VAE 模型路径")
     
     # ControlNet specific
-    parser.add_argument("--control_types", type=str, nargs="+", default=["canny"],
-        help="控制类型列表，可同时训练多种")
+
     parser.add_argument("--conditioning_scale", type=float, default=0.75,
         help="ControlNet 条件强度 (0-1)")
     
@@ -125,7 +124,7 @@ def parse_args():
         
         # ControlNet specific
         args.controlnet = controlnet_cfg.get("controlnet_path", args.controlnet)
-        args.control_types = controlnet_cfg.get("control_types", args.control_types)
+
         args.conditioning_scale = controlnet_cfg.get("conditioning_scale", args.conditioning_scale)
         
         # Training
@@ -193,7 +192,7 @@ def main():
     logger.info("🎛️ Z-Image ControlNet Training")
     logger.info("=" * 60)
     logger.info(f"📁 输出: {args.output_dir}/{args.output_name}")
-    logger.info(f"🎮 控制类型: {', '.join(args.control_types)}")
+
     logger.info(f"💪 条件强度: {args.conditioning_scale}")
     logger.info(f"⚡ 精度: {weight_dtype}")
     logger.info("🔒 Transformer 自动冻结")
