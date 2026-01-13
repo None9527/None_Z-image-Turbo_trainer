@@ -165,28 +165,42 @@ def parse_args():
         import toml
         config = toml.load(args.config)
         
-        # General
+        # Apply config values (与 train_zimage_v2.py 保持一致)
         general_cfg = config.get("general", {})
+        training_cfg = config.get("training", {})
+        acrf_cfg = config.get("acrf", {})
+        advanced_cfg = config.get("advanced", {})
+        
+        # General / Model
         args.dit = general_cfg.get("dit", args.dit)
         args.vae = general_cfg.get("vae", args.vae)
+        args.output_dir = general_cfg.get("output_dir", args.output_dir)
         
-        # Training
-        training_cfg = config.get("training", {})
-        args.output_dir = training_cfg.get("output_dir", args.output_dir)
-        args.output_name = training_cfg.get("output_name", args.output_name)
-        args.learning_rate = training_cfg.get("learning_rate", args.learning_rate)
+        # Training (从 [training] 和 [advanced] 双处回退读取)
+        if args.output_name is None:
+            args.output_name = training_cfg.get("output_name", "zimage_finetune")
+            
+        if args.num_train_epochs is None:
+            args.num_train_epochs = training_cfg.get("num_train_epochs", 
+                                    advanced_cfg.get("num_train_epochs", 10))
+                                    
+        if args.learning_rate is None:
+            args.learning_rate = training_cfg.get("learning_rate", 1e-5)
+
+        args.gradient_accumulation_steps = training_cfg.get("gradient_accumulation_steps",
+                                            advanced_cfg.get("gradient_accumulation_steps", args.gradient_accumulation_steps))
         
-        # Advanced
-        advanced_cfg = config.get("advanced", {})
-        args.num_train_epochs = advanced_cfg.get("num_train_epochs", args.num_train_epochs)
-        args.gradient_accumulation_steps = advanced_cfg.get("gradient_accumulation_steps", args.gradient_accumulation_steps)
+        # Seed (从 [training] 或 [advanced] 读取)
+        args.seed = training_cfg.get("seed", advanced_cfg.get("seed", args.seed))
+                                            
+        if args.save_every_n_epochs is None:
+            args.save_every_n_epochs = advanced_cfg.get("save_every_n_epochs", 1)
+            
+        args.gradient_checkpointing = training_cfg.get("gradient_checkpointing",
+                                        advanced_cfg.get("gradient_checkpointing", args.gradient_checkpointing))
         args.max_grad_norm = advanced_cfg.get("max_grad_norm", args.max_grad_norm)
-        args.save_every_n_epochs = advanced_cfg.get("save_every_n_epochs", args.save_every_n_epochs)
-        args.seed = advanced_cfg.get("seed", args.seed)
-        args.gradient_checkpointing = advanced_cfg.get("gradient_checkpointing", args.gradient_checkpointing)
         
         # AC-RF / ACRF
-        acrf_cfg = config.get("acrf", {})
         args.turbo_steps = acrf_cfg.get("turbo_steps", args.turbo_steps)
         args.shift = acrf_cfg.get("shift", args.shift)
         args.jitter_scale = acrf_cfg.get("jitter_scale", args.jitter_scale)
@@ -233,7 +247,7 @@ def parse_args():
         args.timestep_low_threshold = acrf_cfg.get("timestep_low_threshold", args.timestep_low_threshold)
         
         # Dynamic Shift
-        args.use_dynamic_shift = acrf_cfg.get("use_dynamic_shift", args.use_dynamic_shift)
+        args.use_dynamic_shift = acrf_cfg.get("use_dynamic_shifting", acrf_cfg.get("use_dynamic_shift", args.use_dynamic_shift))
         args.base_seq_len = acrf_cfg.get("base_seq_len", args.base_seq_len)
         args.max_seq_len = acrf_cfg.get("max_seq_len", args.max_seq_len)
         args.base_shift = acrf_cfg.get("base_shift", args.base_shift)
