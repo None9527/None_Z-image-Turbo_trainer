@@ -88,7 +88,15 @@
             <span class="value">{{ currentConfig.acrf?.turbo_steps ?? 10 }}</span>
           </div>
           <div class="preview-item">
-            <span class="label">Shift</span>
+            <span class="label">Shift 模式</span>
+            <span class="value">{{ currentConfig.acrf?.use_dynamic_shift ? 'Dynamic' : 'Fixed' }}</span>
+          </div>
+          <div class="preview-item" v-if="currentConfig.acrf?.use_dynamic_shift">
+            <span class="label">Shift 范围</span>
+            <span class="value">{{ currentConfig.acrf?.base_shift ?? 0.5 }} ~ {{ currentConfig.acrf?.max_shift ?? 1.15 }}</span>
+          </div>
+          <div class="preview-item" v-else>
+            <span class="label">Fixed Shift</span>
             <span class="value">{{ currentConfig.acrf?.shift ?? 3.0 }}</span>
           </div>
           <div class="preview-item">

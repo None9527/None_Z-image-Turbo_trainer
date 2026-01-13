@@ -109,7 +109,50 @@
             <template v-if="config.training_type === 'controlnet'">
               <div class="subsection-label" style="margin-top: 20px">ControlNet 配置</div>
               
+              <!-- 加载模式选择 -->
               <div class="control-row">
+                <span class="label">
+                  训练模式
+                  <el-tooltip content="创建新模型从头训练，或加载已有权重继续训练" placement="top">
+                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-radio-group v-model="config.controlnet.resume_training">
+                  <el-radio-button :label="false">创建新模型</el-radio-button>
+                  <el-radio-button :label="true">继续训练</el-radio-button>
+                </el-radio-group>
+              </div>
+              
+              <!-- 继续训练时显示权重选择器 -->
+              <template v-if="config.controlnet.resume_training">
+                <div class="form-row-full">
+                  <label>
+                    选择 ControlNet 权重
+                    <el-tooltip content="选择要继续训练的 ControlNet 权重文件" placement="top">
+                      <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                    </el-tooltip>
+                  </label>
+                  <el-select v-model="config.controlnet.controlnet_path" placeholder="选择 ControlNet 权重..." filterable clearable style="width: 100%">
+                    <el-option v-for="cn in controlnetList" :key="cn.path" :label="cn.name" :value="cn.path">
+                      <span style="float: left">{{ cn.name }}</span>
+                      <span style="float: right; color: var(--el-text-color-secondary); font-size: 12px">
+                        {{ (cn.size / 1024 / 1024).toFixed(1) }} MB
+                      </span>
+                    </el-option>
+                  </el-select>
+                </div>
+                <el-alert 
+                  v-if="config.controlnet.controlnet_path" 
+                  type="info" 
+                  :closable="false" 
+                  show-icon
+                  style="margin-top: 8px"
+                >
+                  将从已有权重继续训练
+                </el-alert>
+              </template>
+              
+              <div class="control-row" style="margin-top: 16px">
                 <span class="label">
                   控制类型 (可多选)
                   <el-tooltip content="选择要训练的控制类型，可同时训练多种" placement="top">
@@ -154,7 +197,7 @@
           <template #title>
             <div class="collapse-title">
               <el-icon><DataAnalysis /></el-icon>
-              <span>Z-Image 参数</span>
+              <span>模型参数 (Model Parameters)</span>
             </div>
           </template>
           <div class="collapse-content">
@@ -182,7 +225,6 @@
             </div>
 
             <!-- Jitter (Turbo 相关) -->
-            <!-- Jitter (Turbo 相关) -->
             <div class="control-row" v-if="config.acrf.enable_turbo">
               <span class="label">
                 Jitter Scale
@@ -195,54 +237,53 @@
             </div>
 
             <!-- ============ Z-Image 特有参数 ============ -->
-            <template>
+            <div class="subsection-label" style="margin-top: 16px">Shift 参数 (Noise Schedule)</div>
+            
+            <div class="control-row">
+              <span class="label">
+                启用 Dynamic Shift
+                <el-tooltip content="启用动态 Shift（推荐）。基于分辨率自动计算 Shift 值，更优的噪声调度" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-switch v-model="config.acrf.use_dynamic_shift" />
+            </div>
+
+            <!-- 动态 Shift 参数 -->
+            <template v-if="config.acrf.use_dynamic_shift">
               <div class="control-row">
                 <span class="label">
-                  Dynamic Shift
-                  <el-tooltip content="启用动态 Shift（推荐）。基于分辨率自动计算 Shift 值，更优的噪声调度" placement="top">
+                  Base Shift
+                  <el-tooltip content="动态 Shift 基准值，默认 0.5" placement="top">
                     <el-icon class="help-icon"><QuestionFilled /></el-icon>
                   </el-tooltip>
                 </span>
-                <el-switch v-model="config.acrf.use_dynamic_shift" />
+                <el-slider v-model="config.acrf.base_shift" :min="0.1" :max="2.0" :step="0.1" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.acrf.base_shift" :min="0.1" :max="2.0" :step="0.1" controls-position="right" class="input-fixed" />
               </div>
-
-              <!-- 动态 Shift 参数 -->
-              <template v-if="config.acrf.use_dynamic_shift">
-                <div class="control-row">
-                  <span class="label">
-                    Base Shift
-                    <el-tooltip content="动态 Shift 基准值，默认 0.5" placement="top">
-                      <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                    </el-tooltip>
-                  </span>
-                  <el-slider v-model="config.acrf.base_shift" :min="0.1" :max="2.0" :step="0.1" :show-tooltip="false" class="slider-flex" />
-                  <el-input-number v-model="config.acrf.base_shift" :min="0.1" :max="2.0" :step="0.1" controls-position="right" class="input-fixed" />
-                </div>
-                <div class="control-row">
-                  <span class="label">
-                    Max Shift
-                    <el-tooltip content="动态 Shift 最大值，默认 1.15" placement="top">
-                      <el-icon class="help-icon"><QuestionFilled /></el-icon>
-                    </el-tooltip>
-                  </span>
-                  <el-slider v-model="config.acrf.max_shift" :min="0.5" :max="3.0" :step="0.05" :show-tooltip="false" class="slider-flex" />
-                  <el-input-number v-model="config.acrf.max_shift" :min="0.5" :max="3.0" :step="0.05" controls-position="right" class="input-fixed" />
-                </div>
-              </template>
-
-              <!-- 静态 Shift 参数 (关闭动态时显示) -->
-              <div class="control-row" v-else>
+              <div class="control-row">
                 <span class="label">
-                  Fixed Shift
-                  <el-tooltip content="固定时间步偏移，影响噪声调度，默认 3.0" placement="top">
+                  Max Shift
+                  <el-tooltip content="动态 Shift 最大值，默认 1.15" placement="top">
                     <el-icon class="help-icon"><QuestionFilled /></el-icon>
                   </el-tooltip>
                 </span>
-                <el-slider v-model="config.acrf.shift" :min="1" :max="5" :step="0.1" :show-tooltip="false" class="slider-flex" />
-                <el-input-number v-model="config.acrf.shift" :min="1" :max="5" :step="0.1" controls-position="right" class="input-fixed" />
+                <el-slider v-model="config.acrf.max_shift" :min="0.5" :max="3.0" :step="0.05" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.acrf.max_shift" :min="0.5" :max="3.0" :step="0.05" controls-position="right" class="input-fixed" />
               </div>
-
             </template>
+
+            <!-- 静态 Shift 参数 (关闭动态时显示) -->
+            <div class="control-row" v-else>
+              <span class="label">
+                Fixed Shift
+                <el-tooltip content="固定时间步偏移，影响噪声调度，默认 3.0" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </span>
+              <el-slider v-model="config.acrf.shift" :min="1" :max="5" :step="0.1" :show-tooltip="false" class="slider-flex" />
+              <el-input-number v-model="config.acrf.shift" :min="1" :max="5" :step="0.1" controls-position="right" class="input-fixed" />
+            </div>
 
           </div>
         </el-collapse-item>
@@ -1107,6 +1148,9 @@ const selectedRegDataset = ref('')
 // LoRA 列表（用于继续训练功能）
 const loraList = ref<{name: string, path: string, size: number}[]>([])
 
+// ControlNet 权重列表（用于继续训练功能）
+const controlnetList = ref<{name: string, path: string, size: number}[]>([])
+
 // System paths (read-only, from env)
 const systemPaths = ref({
   model_path: '',
@@ -1294,9 +1338,10 @@ function getDefaultConfig() {
       train_single_stream: false
     },
     controlnet: {
-      control_types: ['canny'],       // 控制类型数组: canny, depth, pose, normal, lineart, seg
-      conditioning_scale: 0.75,       // 条件强度 (0-1)
-      controlnet_path: ''             // 预训练 ControlNet 路径
+      resume_training: false,           // 是否继续训练 (false=创建新模型)
+      controlnet_path: '',              // 预训练 ControlNet 路径 (继续训练时使用)
+      control_types: ['canny'],         // 控制类型数组: canny, depth, pose, normal, lineart, seg
+      conditioning_scale: 0.75,         // 条件强度 (0-1)
     },
     optimizer: {
       type: 'AdamW8bit',
@@ -1692,6 +1737,19 @@ watch(() => config.value.acrf.enable_turbo, (val) => {
     config.value.acrf.jitter_scale = 0
   }
 })
+
+// 获取 ControlNet 权重列表
+async function fetchControlnets() {
+  try {
+    const res = await axios.get('/api/controlnets')
+    controlnetList.value = res.data.controlnets || []
+  } catch (e) {
+    console.warn('Failed to fetch ControlNets:', e)
+  }
+}
+
+// 初始化加载 ControlNet 列表
+fetchControlnets()
 </script>
 
 <style scoped>
