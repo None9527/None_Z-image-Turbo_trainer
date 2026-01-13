@@ -630,6 +630,7 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         "[training]",
         f'output_name = "{config.get("training", {}).get("output_name", "zimage-lora")}"',
         f'optimizer_type = "{config.get("optimizer", {}).get("type", "AdamW8bit")}"',
+        f"adafactor_relative_step = {'true' if config.get('optimizer', {}).get('relative_step', False) else 'false'}",
         f"learning_rate = {config.get('training', {}).get('learning_rate', 0.0001)}",
         f"weight_decay = {config.get('training', {}).get('weight_decay', 0.01)}",
         f'lr_scheduler = "{config.get("training", {}).get("lr_scheduler", "constant")}"',

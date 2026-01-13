@@ -271,6 +271,7 @@ def parse_args():
         
         # Optimizer
         args.optimizer_type = training_cfg.get("optimizer_type", args.optimizer_type)
+        args.adafactor_relative_step = training_cfg.get("adafactor_relative_step", getattr(args, 'adafactor_relative_step', False))
         args.weight_decay = training_cfg.get("weight_decay", args.weight_decay)
         
         # Scheduler
@@ -554,10 +555,24 @@ def main():
             logger.warning("  ⚠ bitsandbytes 未安装，使用标准 AdamW")
     elif args.optimizer_type == "Adafactor":
         from transformers.optimization import Adafactor
-        optimizer = Adafactor(
-            trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay,
-            scale_parameter=False, relative_step=False
-        )
+        relative_step = getattr(args, 'adafactor_relative_step', False)
+        if isinstance(relative_step, str):
+            relative_step = relative_step.lower() in ('true', '1', 'yes')
+        relative_step = bool(relative_step)
+        
+        if relative_step:
+            optimizer = Adafactor(
+                trainable_params,
+                scale_parameter=True,
+                relative_step=True,
+                warmup_init=True,
+            )
+            logger.info("  📊 Adafactor (自适应 LR 模式)")
+        else:
+            optimizer = Adafactor(
+                trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay,
+                scale_parameter=False, relative_step=False
+            )
     elif args.optimizer_type == "Prodigy":
         try:
             from prodigyopt import Prodigy

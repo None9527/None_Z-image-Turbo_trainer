@@ -412,7 +412,18 @@
                 <el-option label="Prodigy (自适应LR)" value="Prodigy" />
               </el-select>
             </div>
-            <div class="form-row-full" v-if="config.optimizer.type !== 'Prodigy'">
+            <!-- Adafactor relative_step 开关 -->
+            <div class="form-row-full" v-if="config.optimizer.type === 'Adafactor'">
+              <label>
+                自适应学习率
+                <el-tooltip content="启用后 Adafactor 自动调整学习率，无需手动设置" placement="top">
+                  <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                </el-tooltip>
+              </label>
+              <el-switch v-model="config.optimizer.relative_step" />
+            </div>
+            <!-- 学习率输入：Prodigy 或 Adafactor+relative_step 时隐藏 -->
+            <div class="form-row-full" v-if="config.optimizer.type !== 'Prodigy' && !(config.optimizer.type === 'Adafactor' && config.optimizer.relative_step)">
               <label>
                 学习率
                 <el-tooltip content="模型学习的速度，太大会崩溃，太小学不到东西，推荐 1e-4" placement="top">
@@ -427,9 +438,9 @@
                 </template>
               </el-input>
             </div>
-            <div class="form-row-full" v-else>
+            <div class="form-row-full" v-else-if="config.optimizer.type === 'Prodigy' || (config.optimizer.type === 'Adafactor' && config.optimizer.relative_step)">
               <el-alert type="info" :closable="false" show-icon>
-                Prodigy 优化器自动调整学习率，无需手动设置
+                {{ config.optimizer.type }} 优化器自动调整学习率，无需手动设置
               </el-alert>
             </div>
 
@@ -1322,7 +1333,8 @@ function getDefaultConfig() {
     },
     optimizer: {
       type: 'AdamW8bit',
-      learning_rate: '1e-4'
+      learning_rate: '1e-4',
+      relative_step: false,  // Adafactor 自适应学习率
     },
     training: {
       output_name: '',  // 留空，强制用户命名
