@@ -708,6 +708,11 @@ def main():
                     timesteps, snr_gamma=args.snr_gamma, snr_floor=args.snr_floor
                 ).to(weight_dtype).squeeze()  # (B,1,1,1) -> (B,)
                 
+                # 获取时间步感知权重 (如果启用，与 LoRA 脚本一致)
+                ts_weights = None
+                if timestep_scheduler:
+                    ts_weights = timestep_scheduler.get_mean_weights(timesteps, num_train_timesteps=1000)
+                
                 # L1 Loss
                 l1_loss_raw = F.l1_loss(pred, target, reduction='none')
                 l1_loss = (l1_loss_raw.mean(dim=(1, 2, 3)) * snr_weights).mean()
@@ -723,18 +728,20 @@ def main():
                     total_loss = total_loss + cos_loss * args.lambda_cosine
                     cos_val = cos_loss.detach().float().item()
                 
-                # Freq Loss
+                # Freq Loss (应用时间步感知权重缩放)
                 freq_val = 0.0
                 if freq_loss_fn is not None and args.lambda_freq > 0:
                     freq_loss = freq_loss_fn(pred, target, noisy_latents, timesteps, num_train_timesteps=1000)
-                    total_loss = total_loss + freq_loss * args.lambda_freq
+                    freq_scale = ts_weights['lambda_freq_scale'] if ts_weights else 1.0
+                    total_loss = total_loss + freq_loss * args.lambda_freq * freq_scale
                     freq_val = freq_loss.detach().float().item()
                 
-                # Style Loss
+                # Style Loss (应用时间步感知权重缩放)
                 style_val = 0.0
                 if style_loss_fn is not None and args.lambda_style > 0:
                     style_loss = style_loss_fn(pred, target, noisy_latents, timesteps, num_train_timesteps=1000)
-                    total_loss = total_loss + style_loss * args.lambda_style
+                    style_scale = ts_weights['lambda_style_scale'] if ts_weights else 1.0
+                    total_loss = total_loss + style_loss * args.lambda_style * style_scale
                     style_val = style_loss.detach().float().item()
                 
                 # RAFT L2 Loss
