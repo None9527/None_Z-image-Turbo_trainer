@@ -412,7 +412,7 @@
                 <el-option label="Prodigy (自适应LR)" value="Prodigy" />
               </el-select>
             </div>
-            <div class="form-row-full">
+            <div class="form-row-full" v-if="config.optimizer.type !== 'Prodigy'">
               <label>
                 学习率
                 <el-tooltip content="模型学习的速度，太大会崩溃，太小学不到东西，推荐 1e-4" placement="top">
@@ -426,6 +426,11 @@
                   </el-tooltip>
                 </template>
               </el-input>
+            </div>
+            <div class="form-row-full" v-else>
+              <el-alert type="info" :closable="false" show-icon>
+                Prodigy 优化器自动调整学习率，无需手动设置
+              </el-alert>
             </div>
 
             <div class="subsection-label">学习率调度器 (LR SCHEDULER)</div>
