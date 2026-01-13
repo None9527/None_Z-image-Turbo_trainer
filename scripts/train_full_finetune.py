@@ -565,12 +565,12 @@ def main():
                 
                 # Freq Loss
                 if freq_loss_fn is not None and args.lambda_freq > 0:
-                    freq_loss = freq_loss_fn(pred, target)
+                    freq_loss = freq_loss_fn(pred, target, noisy_latents, timesteps, num_train_timesteps=1000)
                     total_loss = total_loss + freq_loss * args.lambda_freq
                 
                 # Style Loss
                 if style_loss_fn is not None and args.lambda_style > 0:
-                    style_loss = style_loss_fn(pred, target)
+                    style_loss = style_loss_fn(pred, target, noisy_latents, timesteps, num_train_timesteps=1000)
                     total_loss = total_loss + style_loss * args.lambda_style
                 
                 # RAFT L2 Loss
