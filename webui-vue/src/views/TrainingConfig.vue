@@ -149,8 +149,8 @@
           </div>
         </el-collapse-item>
 
-        <!-- 2. 模型专属参数（根据模型类型显示） -->
-        <el-collapse-item name="acrf">
+        <!-- 2. 模型专属参数（仅 LoRA/Finetune 显示，ControlNet 不需要） -->
+        <el-collapse-item name="acrf" v-if="config.training_type !== 'controlnet'">
           <template #title>
             <div class="collapse-title">
               <el-icon><DataAnalysis /></el-icon>
@@ -517,7 +517,8 @@
               <el-input v-model="config.advanced.gpu_ids" placeholder="如: 0,1,2" style="width: 150px" />
             </div>
             
-            <!-- CFG 训练配置 -->
+            <!-- CFG 训练配置 (ControlNet 不需要) -->
+            <template v-if="config.training_type !== 'controlnet'">
             <div class="subsection-label">CFG 训练 (CFG TRAINING)</div>
             <div class="control-row">
               <span class="label">
@@ -549,6 +550,7 @@
                 <el-slider v-model="config.acrf.cfg_training_ratio" :min="0.1" :max="1.0" :step="0.1" :show-tooltip="false" class="slider-flex" />
                 <el-input-number v-model="config.acrf.cfg_training_ratio" :min="0.1" :max="1.0" :step="0.1" controls-position="right" class="input-fixed" />
               </div>
+            </template>
             </template>
           </div>
         </el-collapse-item>
@@ -592,6 +594,8 @@
               <el-switch v-model="config.dataset.enable_bucket" />
             </div>
 
+            <!-- CFG Drop Text (ControlNet 不需要) -->
+            <template v-if="config.training_type !== 'controlnet'">
             <div class="subsection-label">🎯 CFG Drop Text</div>
             <div class="control-row">
               <span class="label">
@@ -612,6 +616,7 @@
             >
               已启用 Drop Text ({{ (config.dataset.drop_text_ratio * 100).toFixed(0) }}%)，有助于保持低 CFG 加速能力
             </el-alert>
+            </template>
 
             <div class="subsection-label-with-action">
               <span>数据集列表 (DATASETS)</span>
@@ -662,7 +667,8 @@
               </div>
             </div>
             
-            <!-- 正则数据集配置（防止过拟合） -->
+            <!-- 正则数据集配置（防止过拟合, ControlNet 不需要） -->
+            <template v-if="config.training_type !== 'controlnet'">
             <div class="subsection-label" style="margin-top: 20px">
               正则数据集 (Regularization)
               <el-tooltip content="正则数据集用于防止过拟合，保持模型原有能力。训练时会混合使用正则数据。" placement="top">
@@ -732,11 +738,12 @@
                 </div>
               </div>
             </template>
+            </template> <!-- ControlNet 不需要正则数据集 -->
           </div>
         </el-collapse-item>
 
-        <!-- 6. 高级选项 -->
-        <el-collapse-item name="advanced">
+        <!-- 6. 高级选项 (仅 LoRA/Finetune 显示，ControlNet 不需要复杂 Loss) -->
+        <el-collapse-item name="advanced" v-if="config.training_type !== 'controlnet'">
           <template #title>
             <div class="collapse-title">
               <el-icon><Tools /></el-icon>
