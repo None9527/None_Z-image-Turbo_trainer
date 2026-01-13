@@ -202,16 +202,17 @@ def parse_args():
         config = toml.load(args.config)
         
         # Apply config values
-        model_cfg = config.get("model", {})
+        general_cfg = config.get("general", {})  # 新版 TOML 结构
+        model_cfg = config.get("model", {})      # 旧版兼容
         training_cfg = config.get("training", {})
         lora_cfg = config.get("lora", {})
         acrf_cfg = config.get("acrf", {})
         advanced_cfg = config.get("advanced", {})
         
-        # Model
-        args.dit = model_cfg.get("dit", args.dit)
-        args.vae = model_cfg.get("vae", args.vae)
-        args.output_dir = model_cfg.get("output_dir", args.output_dir)
+        # Model - 优先从 general，回退到 model
+        args.dit = general_cfg.get("dit") or model_cfg.get("dit") or args.dit
+        args.vae = general_cfg.get("vae") or model_cfg.get("vae") or args.vae
+        args.output_dir = general_cfg.get("output_dir") or model_cfg.get("output_dir") or args.output_dir
         
         # Training
         if args.output_name is None:
