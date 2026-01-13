@@ -507,6 +507,10 @@ def main():
     ema_loss = None
     ema_decay = 0.99
     
+    # Loss 累积变量（TensorBoard 标准做法）
+    accumulated_loss = 0.0
+    accumulation_count = 0
+    
     for epoch in range(args.num_train_epochs):
         if _interrupted:
             logger.info("[EXIT] Training interrupted")
@@ -515,9 +519,15 @@ def main():
                 save_transformer_weights(transformer, str(emergency_path), dtype=weight_dtype)
             break
         
-        pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{args.num_train_epochs}", disable=not accelerator.is_main_process)
+        # 获取当前 epoch 的 L2 ratio
+        current_l2_ratio = l2_scheduler.get_ratio(epoch + 1) if l2_scheduler else args.free_stream_ratio
         
-        for batch in pbar:
+        if raft_mode:
+            logger.info(f"\nEpoch {epoch + 1}/{args.num_train_epochs} [L2={current_l2_ratio:.2f}]")
+        else:
+            logger.info(f"\nEpoch {epoch + 1}/{args.num_train_epochs}")
+        
+        for step, batch in enumerate(tqdm(dataloader, desc=f"Epoch {epoch+1}", disable=True)):
             if _interrupted:
                 break
             
@@ -575,35 +585,47 @@ def main():
                 
                 # RAFT L2 Loss
                 if raft_mode:
-                    current_ratio = l2_scheduler.get_ratio(epoch) if l2_scheduler else args.free_stream_ratio
                     l2_loss = F.mse_loss(pred, target, reduction='none')
                     l2_loss = (l2_loss.mean(dim=(1, 2, 3)) * snr_weights).mean()
-                    total_loss = total_loss + l2_loss * current_ratio
+                    total_loss = total_loss + l2_loss * current_l2_ratio
+                
+                # 累积 loss
+                accumulated_loss += total_loss.detach().float().item()
+                accumulation_count += 1
                 
                 # Backward
                 total_loss = total_loss.float()
                 accelerator.backward(total_loss)
+            
+            # 梯度累积完成后执行优化步骤 (在 accumulate 块外)
+            if accelerator.sync_gradients:
                 accelerator.clip_grad_norm_(trainable_params, args.max_grad_norm)
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
-            
-            global_step += 1
-            
-            # EMA loss
-            loss_item = total_loss.item()
-            if ema_loss is None:
-                ema_loss = loss_item
-            else:
-                ema_loss = ema_decay * ema_loss + (1 - ema_decay) * loss_item
-            
-            # Log
-            if accelerator.is_main_process:
-                pbar.set_postfix({"loss": f"{ema_loss:.4f}", "lr": f"{lr_scheduler.get_last_lr()[0]:.2e}"})
                 
-                if writer and global_step % 10 == 0:
-                    writer.add_scalar("train/loss", ema_loss, global_step)
-                    writer.add_scalar("train/learning_rate", lr_scheduler.get_last_lr()[0], global_step)
+                global_step += 1
+                
+                # 计算累积期间的平均 loss
+                avg_loss = accumulated_loss / max(accumulation_count, 1)
+                accumulated_loss = 0.0
+                accumulation_count = 0
+                
+                # Update EMA loss
+                if ema_loss is None:
+                    ema_loss = avg_loss
+                else:
+                    ema_loss = ema_decay * ema_loss + (1 - ema_decay) * avg_loss
+                
+                # 打印日志（与 LoRA 脚本格式一致）
+                if accelerator.is_main_process:
+                    current_lr = lr_scheduler.get_last_lr()[0]
+                    print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={avg_loss:.4f} ema={ema_loss:.4f} lr={current_lr:.2e}", flush=True)
+                    
+                    if writer and global_step % 10 == 0:
+                        writer.add_scalar("train/loss", avg_loss, global_step)
+                        writer.add_scalar("train/ema_loss", ema_loss, global_step)
+                        writer.add_scalar("train/learning_rate", current_lr, global_step)
         
         # Save checkpoint
         if accelerator.is_main_process and (epoch + 1) % args.save_every_n_epochs == 0:
