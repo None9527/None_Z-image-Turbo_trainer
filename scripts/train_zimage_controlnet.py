@@ -419,22 +419,15 @@ def main():
                     )[0]
                 pred = -torch.stack(pred_list, dim=0).squeeze(2)
                 
-                # Compute losses
+                # Compute losses - ControlNet 使用标准 MSE L2 Loss
                 snr_weights = compute_snr_weights(
                     timesteps, gamma=args.snr_gamma, floor=args.snr_floor
                 ).to(weight_dtype)
                 
-                # L1 Loss
-                l1_loss = F.l1_loss(pred, target, reduction='none')
-                l1_loss = (l1_loss.mean(dim=(1, 2, 3)) * snr_weights).mean()
-                total_loss = l1_loss * args.lambda_l1
-                
-                # Cosine Loss
-                if args.lambda_cosine > 0:
-                    cos_loss = 1.0 - F.cosine_similarity(
-                        pred.flatten(1), target.flatten(1), dim=1
-                    ).mean()
-                    total_loss = total_loss + cos_loss * args.lambda_cosine
+                # MSE L2 Loss (标准 ControlNet 训练方法)
+                mse_loss = F.mse_loss(pred, target, reduction='none')
+                mse_loss = (mse_loss.mean(dim=(1, 2, 3)) * snr_weights).mean()
+                total_loss = mse_loss
                 
                 # Backward
                 total_loss = total_loss.float()
