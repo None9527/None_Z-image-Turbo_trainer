@@ -362,7 +362,6 @@ def main():
         num_train_timesteps=1000,
         turbo_steps=args.turbo_steps,
         shift=args.shift,
-        jitter_scale=args.jitter_scale,
         use_dynamic_shift=use_dynamic_shift,
         base_seq_len=args.base_seq_len,
         max_seq_len=args.max_seq_len,
