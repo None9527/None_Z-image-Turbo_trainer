@@ -533,6 +533,9 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         TOML 配置字符串
     """
     
+    # 获取训练类型（提前定义，后续多处使用）
+    training_type = config.get("training_type", "lora")
+    
     # 获取数据集配置
     dataset_cfg = config.get("dataset", {})
     datasets = dataset_cfg.get("datasets", [])
