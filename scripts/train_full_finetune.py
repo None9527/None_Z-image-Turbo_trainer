@@ -532,7 +532,7 @@ def main():
                 
                 # Compute losses
                 snr_weights = compute_snr_weights(
-                    timesteps, gamma=args.snr_gamma, floor=args.snr_floor
+                    timesteps, snr_gamma=args.snr_gamma, snr_floor=args.snr_floor
                 ).to(weight_dtype)
                 
                 # L1 Loss
