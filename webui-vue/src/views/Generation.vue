@@ -22,6 +22,30 @@
                 </el-radio-group>
               </div>
 
+              <!-- Transformer 模型选择 (Finetune 支持) -->
+              <div class="param-group">
+                <div class="group-label">Transformer 模型 (FINETUNE)</div>
+                <el-select 
+                  v-model="params.transformer_path" 
+                  placeholder="使用默认模型" 
+                  clearable 
+                  filterable
+                  style="width: 100%;"
+                >
+                  <el-option
+                    v-for="t in transformerList"
+                    :key="t.path"
+                    :label="t.name"
+                    :value="t.is_default ? null : t.path"
+                  >
+                    <span style="float: left">{{ t.name }}</span>
+                    <span v-if="t.size > 0" style="float: right; color: var(--el-text-color-secondary); font-size: 12px">
+                      {{ (t.size / 1024 / 1024 / 1024).toFixed(1) }} GB
+                    </span>
+                  </el-option>
+                </el-select>
+              </div>
+
               <!-- Prompt -->
               <div class="param-group">
                 <div class="group-label">提示词 (PROMPT)</div>
@@ -449,7 +473,8 @@ const defaultParams = {
   lora_path: null as string | null,
   lora_scale: 1.0,
   comparison_mode: false,
-  model_type: "zimage"
+  model_type: "zimage",
+  transformer_path: null as string | null,  // Finetune model path
 }
 
 const savedParams = loadSavedParams()
@@ -566,6 +591,9 @@ const historyList = ref<any[]>([])
 
 // LoRA state
 const loraList = ref<any[]>([])
+
+// Transformer state
+const transformerList = ref<any[]>([])
 
 // Lightbox state
 const lightboxVisible = ref(false)
@@ -916,6 +944,16 @@ const fetchLoras = async () => {
   }
 }
 
+// Transformer Logic (Finetune models)
+const fetchTransformers = async () => {
+  try {
+    const res = await axios.get('/api/transformers')
+    transformerList.value = res.data.transformers || []
+  } catch (e) {
+    console.error('Failed to fetch Transformers:', e)
+  }
+}
+
 const openLightbox = (item: any) => {
   lightboxItem.value = item
   lightboxVisible.value = true
@@ -1005,6 +1043,7 @@ const zoomOut = (target: 'main' | 'lightbox') => {
 onMounted(() => {
   fetchHistory()
   fetchLoras()
+  fetchTransformers()  // Fetch finetune models
   checkPendingTask() // 检查是否有被中断的任务
 })
 </script>

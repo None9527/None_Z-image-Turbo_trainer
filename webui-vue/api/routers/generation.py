@@ -116,6 +116,44 @@ async def get_loras():
     }
 
 
+@router.get("/transformers")
+async def get_transformers():
+    """Scan for Transformer models (finetune outputs) in output directory"""
+    transformers = []
+    
+    # Default transformer path
+    default_transformer = get_model_path("zimage", "transformer")
+    if default_transformer.exists():
+        transformers.append({
+            "name": "Default (原始模型)",
+            "path": str(default_transformer),
+            "size": 0,  # Directory
+            "is_default": True
+        })
+    
+    # Scan output directory for finetune weights
+    if OUTPUTS_DIR.exists():
+        for root, _, files in os.walk(OUTPUTS_DIR):
+            for file in files:
+                if file.endswith(".safetensors") and ("finetune" in file.lower() or "transformer" in file.lower() or "epoch" in file.lower() or "final" in file.lower()):
+                    full_path = Path(root) / file
+                    try:
+                        rel_path = full_path.relative_to(OUTPUTS_DIR)
+                        transformers.append({
+                            "name": str(rel_path),
+                            "path": str(full_path),
+                            "size": full_path.stat().st_size,
+                            "is_default": False
+                        })
+                    except ValueError:
+                        pass
+    
+    return {
+        "transformers": sorted(transformers, key=lambda x: (not x["is_default"], x["name"])),
+        "outputPath": str(OUTPUTS_DIR)
+    }
+
+
 @router.get("/loras/download")
 async def download_lora(path: str):
     """Download a LoRA model file"""
