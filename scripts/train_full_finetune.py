@@ -335,12 +335,6 @@ def main():
     
     # 不冻结模型，直接训练
     transformer.requires_grad_(True)
-    
-    # 先不启用 gradient checkpointing，等 accelerator.prepare() 后再启用
-    # if args.gradient_checkpointing:
-    #     transformer.enable_gradient_checkpointing()
-    #     logger.info("  [CKPT] Gradient checkpointing enabled")
-    
     transformer.train()
     
     # 统计可训练参数
