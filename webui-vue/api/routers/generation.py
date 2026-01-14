@@ -255,17 +255,16 @@ async def generate_image(req: GenerationRequest):
             generator = get_generator(OUTPUTS_DIR)
             
             # 获取或加载 Pipeline
-            # 如果指定了 transformer_path，需要重新加载 pipeline
+            # 根据 transformer_path 区分缓存键
             transformer_path = req.transformer_path
             cache_key = f"{model_type}:{transformer_path or 'default'}"
             
             pipe = state.get_pipeline(cache_key)
             if pipe is None:
-                # 清理旧的 pipeline 以释放显存
-                if transformer_path:
-                    state.clear_pipelines()
-                    if TORCH_AVAILABLE and torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+                # 清理所有旧 pipeline 以释放显存（无论切换到什么模型）
+                state.clear_pipelines()
+                if TORCH_AVAILABLE and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
                 
                 pipe = load_pipeline_with_adapter(model_type, transformer_path)
                 state.set_pipeline(cache_key, pipe)
@@ -358,11 +357,10 @@ async def generate_image_stream(req: GenerationRequest):
             
             pipe = state.get_pipeline(cache_key)
             if pipe is None:
-                # 清理旧的 pipeline 以释放显存
-                if transformer_path:
-                    state.clear_pipelines()
-                    if TORCH_AVAILABLE and torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+                # 清理所有旧 pipeline 以释放显存（无论切换到什么模型）
+                state.clear_pipelines()
+                if TORCH_AVAILABLE and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
                 
                 pipe = load_pipeline_with_adapter(model_type, transformer_path)
                 state.set_pipeline(cache_key, pipe)
