@@ -1099,8 +1099,22 @@ def main():
                 if lr_scheduler is not None:
                     current_lr = lr_scheduler.get_last_lr()[0]
                 else:
-                    # Adafactor 自适应模式：从 optimizer 获取学习率
-                    current_lr = optimizer.param_groups[0].get('lr', 0.0) or 0.0
+                    # Adafactor 自适应模式：尝试多种方式获取学习率
+                    try:
+                        # 方法1：尝试从 AcceleratedOptimizer 获取原始 optimizer
+                        orig_opt = getattr(optimizer, 'optimizer', optimizer)
+                        if hasattr(orig_opt, '_get_lr'):
+                            # Adafactor 的 _get_lr 方法
+                            group = orig_opt.param_groups[0]
+                            param = group['params'][0]
+                            if param in orig_opt.state:
+                                current_lr = orig_opt._get_lr(group, orig_opt.state[param])
+                            else:
+                                current_lr = 0.0
+                        else:
+                            current_lr = optimizer.param_groups[0].get('lr', 0.0) or 0.0
+                    except Exception:
+                        current_lr = 0.0
                 
                 # Print progress for frontend parsing (CRITICAL: exact format required)
                 # 只让主进程打印日志，避免多卡训练时日志混乱

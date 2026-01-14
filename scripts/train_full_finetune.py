@@ -828,8 +828,20 @@ def main():
                     if lr_scheduler is not None:
                         current_lr = lr_scheduler.get_last_lr()[0]
                     else:
-                        # Adafactor 自适应模式：从 optimizer 获取学习率
-                        current_lr = optimizer.param_groups[0].get('lr', 0.0) or 0.0
+                        # Adafactor 自适应模式：尝试多种方式获取学习率
+                        try:
+                            orig_opt = getattr(optimizer, 'optimizer', optimizer)
+                            if hasattr(orig_opt, '_get_lr'):
+                                group = orig_opt.param_groups[0]
+                                param = group['params'][0]
+                                if param in orig_opt.state:
+                                    current_lr = orig_opt._get_lr(group, orig_opt.state[param])
+                                else:
+                                    current_lr = 0.0
+                            else:
+                                current_lr = optimizer.param_groups[0].get('lr', 0.0) or 0.0
+                        except Exception:
+                            current_lr = 0.0
                     print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={avg_loss:.4f} avr={avr_loss:.4f} ema={ema_loss:.4f} l1={avg_l1:.4f} cos={avg_cos:.4f} freq={avg_freq:.4f} style={avg_style:.4f} L2={avg_l2:.4f} lr={current_lr:.2e}", flush=True)
                     
                     if writer:
