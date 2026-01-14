@@ -53,7 +53,7 @@
             </el-menu-item>
             <el-menu-item index="/loras">
               <el-icon><Files /></el-icon>
-              <span>LoRA 管理</span>
+              <span>模型管理</span>
             </el-menu-item>
           </el-menu>
 

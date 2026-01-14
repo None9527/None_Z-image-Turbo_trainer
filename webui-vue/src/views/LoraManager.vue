@@ -1,29 +1,57 @@
 <template>
-  <div class="lora-manager">
+  <div class="model-manager">
     <div class="page-header">
-      <h1><el-icon><Files /></el-icon> LoRA 模型管理</h1>
-      <el-button @click="fetchLoras" :loading="loading">
+      <h1><el-icon><Files /></el-icon> 模型管理</h1>
+      <el-button @click="fetchModels" :loading="loading">
         <el-icon><Refresh /></el-icon> 刷新
       </el-button>
     </div>
 
-    <el-card class="lora-card glass-card" shadow="hover">
+    <!-- 模型类型 Tabs -->
+    <el-tabs v-model="activeTab" type="card" class="model-tabs" @tab-change="handleTabChange">
+      <el-tab-pane label="LoRA" name="lora">
+        <template #label>
+          <span class="tab-label">
+            <el-icon><Connection /></el-icon> LoRA
+            <el-badge v-if="loraList.length > 0" :value="loraList.length" class="tab-badge" />
+          </span>
+        </template>
+      </el-tab-pane>
+      <el-tab-pane label="Finetune" name="finetune">
+        <template #label>
+          <span class="tab-label">
+            <el-icon><Cpu /></el-icon> Finetune
+            <el-badge v-if="finetuneList.length > 0" :value="finetuneList.length" class="tab-badge" />
+          </span>
+        </template>
+      </el-tab-pane>
+      <el-tab-pane label="ControlNet" name="controlnet">
+        <template #label>
+          <span class="tab-label">
+            <el-icon><Grid /></el-icon> ControlNet
+            <el-badge v-if="controlnetList.length > 0" :value="controlnetList.length" class="tab-badge" />
+          </span>
+        </template>
+      </el-tab-pane>
+    </el-tabs>
+
+    <el-card class="model-card glass-card" shadow="hover">
       <template #header>
         <div class="card-header">
           <div class="header-left">
-            <span>训练产出 ({{ loraList.length }} 个模型)</span>
+            <span>{{ currentTabLabel }} ({{ currentList.length }} 个模型)</span>
             <!-- 批量操作按钮 -->
-            <div class="batch-actions" v-if="selectedLoras.length > 0">
+            <div class="batch-actions" v-if="selectedModels.length > 0">
               <el-button type="primary" size="small" @click="batchDownload">
-                <el-icon><Download /></el-icon> 下载选中 ({{ selectedLoras.length }})
+                <el-icon><Download /></el-icon> 下载选中 ({{ selectedModels.length }})
               </el-button>
               <el-button type="danger" size="small" @click="batchDelete">
-                <el-icon><Delete /></el-icon> 删除选中 ({{ selectedLoras.length }})
+                <el-icon><Delete /></el-icon> 删除选中 ({{ selectedModels.length }})
               </el-button>
             </div>
           </div>
           <div class="path-hint">
-            <span>路径: {{ loraPath }}</span>
+            <span>路径: {{ currentPath }}</span>
             <el-button 
               type="primary" 
               link 
@@ -37,8 +65,8 @@
         </div>
       </template>
 
-      <div v-loading="loading" class="lora-content">
-        <el-empty v-if="loraList.length === 0 && !loading" description="暂无 LoRA 模型">
+      <div v-loading="loading" class="model-content">
+        <el-empty v-if="currentList.length === 0 && !loading" :description="`暂无 ${currentTabLabel} 模型`">
           <template #image>
             <el-icon style="font-size: 64px; color: var(--el-text-color-secondary)"><FolderOpened /></el-icon>
           </template>
@@ -46,7 +74,7 @@
 
         <el-table 
           v-else 
-          :data="loraList" 
+          :data="currentList" 
           style="width: 100%" 
           stripe
           @selection-change="handleSelectionChange"
@@ -59,6 +87,7 @@
               <div class="file-name">
                 <el-icon class="file-icon"><Document /></el-icon>
                 <span>{{ row.name }}</span>
+                <el-tag v-if="row.is_default" type="success" size="small">默认</el-tag>
               </div>
             </template>
           </el-table-column>
@@ -71,14 +100,15 @@
 
           <el-table-column label="操作" width="200" align="center">
             <template #default="{ row }">
-              <el-button-group>
-                <el-button type="primary" size="small" @click="downloadLora(row)">
+              <el-button-group v-if="!row.is_default">
+                <el-button type="primary" size="small" @click="downloadModel(row)">
                   <el-icon><Download /></el-icon> 下载
                 </el-button>
-                <el-button type="danger" size="small" @click="deleteLora(row)">
+                <el-button type="danger" size="small" @click="deleteModel(row)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </el-button-group>
+              <span v-else class="default-hint">系统模型</span>
             </template>
           </el-table-column>
         </el-table>
@@ -87,8 +117,8 @@
 
     <!-- 删除确认对话框（单个） -->
     <el-dialog v-model="deleteDialogVisible" title="确认删除" width="400px">
-      <p>确定要删除 LoRA 模型吗？</p>
-      <p class="delete-filename">{{ selectedLora?.name }}</p>
+      <p>确定要删除此模型吗？</p>
+      <p class="delete-filename">{{ selectedModel?.name }}</p>
       <p class="warning-text">此操作不可恢复！</p>
       <template #footer>
         <el-button @click="deleteDialogVisible = false">取消</el-button>
@@ -98,19 +128,19 @@
 
     <!-- 批量删除确认对话框 -->
     <el-dialog v-model="batchDeleteDialogVisible" title="批量删除确认" width="500px">
-      <p>确定要删除以下 {{ selectedLoras.length }} 个 LoRA 模型吗？</p>
+      <p>确定要删除以下 {{ selectedModels.length }} 个模型吗？</p>
       <div class="batch-delete-list">
-        <div v-for="lora in selectedLoras" :key="lora.path" class="delete-item">
+        <div v-for="model in selectedModels" :key="model.path" class="delete-item">
           <el-icon><Document /></el-icon>
-          <span>{{ lora.name }}</span>
-          <span class="delete-item-size">{{ formatSize(lora.size) }}</span>
+          <span>{{ model.name }}</span>
+          <span class="delete-item-size">{{ formatSize(model.size) }}</span>
         </div>
       </div>
       <p class="warning-text">⚠️ 此操作不可恢复！</p>
       <template #footer>
         <el-button @click="batchDeleteDialogVisible = false">取消</el-button>
         <el-button type="danger" @click="confirmBatchDelete" :loading="deleting">
-          删除全部 ({{ selectedLoras.length }})
+          删除全部 ({{ selectedModels.length }})
         </el-button>
       </template>
     </el-dialog>
@@ -118,28 +148,68 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { Files, Refresh, Document, Download, Delete, FolderOpened, CopyDocument } from '@element-plus/icons-vue'
+import { ref, computed, onMounted } from 'vue'
+import { Files, Refresh, Document, Download, Delete, FolderOpened, CopyDocument, Connection, Cpu, Grid } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
-interface LoraItem {
+interface ModelItem {
   name: string
   path: string
   size: number
+  is_default?: boolean
 }
 
 const loading = ref(false)
-const loraList = ref<LoraItem[]>([])
+const activeTab = ref('lora')
+
+// 三种模型列表
+const loraList = ref<ModelItem[]>([])
+const finetuneList = ref<ModelItem[]>([])
+const controlnetList = ref<ModelItem[]>([])
+
+// 路径
 const loraPath = ref('')
+const finetunePath = ref('')
+const controlnetPath = ref('')
+
 const deleteDialogVisible = ref(false)
 const batchDeleteDialogVisible = ref(false)
-const selectedLora = ref<LoraItem | null>(null)
-const selectedLoras = ref<LoraItem[]>([])
+const selectedModel = ref<ModelItem | null>(null)
+const selectedModels = ref<ModelItem[]>([])
 const deleting = ref(false)
 const tableRef = ref()
 
+// 计算属性
+const currentList = computed(() => {
+  switch (activeTab.value) {
+    case 'lora': return loraList.value
+    case 'finetune': return finetuneList.value.filter(m => !m.is_default)
+    case 'controlnet': return controlnetList.value
+    default: return []
+  }
+})
+
+const currentPath = computed(() => {
+  switch (activeTab.value) {
+    case 'lora': return loraPath.value
+    case 'finetune': return finetunePath.value
+    case 'controlnet': return controlnetPath.value
+    default: return ''
+  }
+})
+
+const currentTabLabel = computed(() => {
+  switch (activeTab.value) {
+    case 'lora': return 'LoRA'
+    case 'finetune': return 'Finetune'
+    case 'controlnet': return 'ControlNet'
+    default: return ''
+  }
+})
+
 const formatSize = (bytes: number) => {
+  if (!bytes || bytes === 0) return '-'
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB'
@@ -148,12 +218,11 @@ const formatSize = (bytes: number) => {
 
 const copyPath = async () => {
   try {
-    await navigator.clipboard.writeText(loraPath.value)
+    await navigator.clipboard.writeText(currentPath.value)
     ElMessage.success('路径已复制到剪贴板')
   } catch (e) {
-    // 降级方案
     const textarea = document.createElement('textarea')
-    textarea.value = loraPath.value
+    textarea.value = currentPath.value
     document.body.appendChild(textarea)
     textarea.select()
     document.execCommand('copy')
@@ -162,79 +231,85 @@ const copyPath = async () => {
   }
 }
 
-const fetchLoras = async () => {
+const handleTabChange = () => {
+  selectedModels.value = []
+}
+
+const fetchModels = async () => {
   loading.value = true
-  selectedLoras.value = []
+  selectedModels.value = []
+  
   try {
-    const res = await axios.get('/api/loras')
-    // 新的返回格式: { loras, loraPath, loraPathExists }
-    loraList.value = res.data.loras || res.data || []
-    loraPath.value = res.data.loraPath || './output'
+    // 并行获取三种模型
+    const [loraRes, finetuneRes] = await Promise.all([
+      axios.get('/api/loras'),
+      axios.get('/api/transformers'),
+    ])
     
-    // 调试日志
-    console.log('[LoRA] loraPath:', res.data.loraPath )
-    console.log('[LoRA] loraPathExists:', res.data.loraPathExists)
-    console.log('[LoRA] loras count:', loraList.value.length)
+    loraList.value = loraRes.data.loras || []
+    loraPath.value = loraRes.data.loraPath || './output/lora'
+    
+    finetuneList.value = finetuneRes.data.transformers || []
+    finetunePath.value = finetuneRes.data.finetunePath || './output/finetune'
+    
+    // ControlNet 目前可能没有 API，先置空
+    controlnetList.value = []
+    controlnetPath.value = './output/controlnet'
+    
   } catch (e) {
-    console.error('Failed to fetch LoRAs:', e)
-    ElMessage.error('获取 LoRA 列表失败')
+    console.error('Failed to fetch models:', e)
+    ElMessage.error('获取模型列表失败')
   } finally {
     loading.value = false
   }
 }
 
-// 多选变化处理
-const handleSelectionChange = (selection: LoraItem[]) => {
-  selectedLoras.value = selection
+const handleSelectionChange = (selection: ModelItem[]) => {
+  selectedModels.value = selection.filter(m => !m.is_default)
 }
 
-// 单个下载
-const downloadLora = (lora: LoraItem) => {
+const downloadModel = (model: ModelItem) => {
+  const apiPath = activeTab.value === 'lora' ? '/api/loras/download' : '/api/loras/download'
   const link = document.createElement('a')
-  link.href = `/api/loras/download?path=${encodeURIComponent(lora.path)}`
-  link.setAttribute('download', lora.name.split('/').pop() || 'lora.safetensors')
+  link.href = `${apiPath}?path=${encodeURIComponent(model.path)}`
+  link.setAttribute('download', model.name.split('/').pop() || 'model.safetensors')
   document.body.appendChild(link)
   link.click()
   link.remove()
   ElMessage.info('已开始下载')
 }
 
-// 批量下载
 const batchDownload = () => {
-  if (selectedLoras.value.length === 0) return
+  if (selectedModels.value.length === 0) return
   
-  ElMessage.info(`开始下载 ${selectedLoras.value.length} 个文件...`)
+  ElMessage.info(`开始下载 ${selectedModels.value.length} 个文件...`)
   
-  // 逐个触发下载（浏览器会自动处理多个下载）
-  selectedLoras.value.forEach((lora, index) => {
+  selectedModels.value.forEach((model, index) => {
     setTimeout(() => {
-      downloadLora(lora)
-    }, index * 500) // 间隔 500ms 避免浏览器阻止
+      downloadModel(model)
+    }, index * 500)
   })
 }
 
-// 单个删除
-const deleteLora = (lora: LoraItem) => {
-  selectedLora.value = lora
+const deleteModel = (model: ModelItem) => {
+  selectedModel.value = model
   deleteDialogVisible.value = true
 }
 
-// 批量删除确认
 const batchDelete = () => {
-  if (selectedLoras.value.length === 0) return
+  if (selectedModels.value.length === 0) return
   batchDeleteDialogVisible.value = true
 }
 
-// 确认单个删除
 const confirmDelete = async () => {
-  if (!selectedLora.value) return
+  if (!selectedModel.value) return
   
   deleting.value = true
   try {
-    await axios.delete(`/api/loras/delete?path=${encodeURIComponent(selectedLora.value.path)}`)
+    await axios.delete(`/api/loras/delete?path=${encodeURIComponent(selectedModel.value.path)}`)
     ElMessage.success('删除成功')
     deleteDialogVisible.value = false
-    fetchLoras()
+    fetchModels()
   } catch (e) {
     console.error('Delete failed:', e)
     ElMessage.error('删除失败')
@@ -243,21 +318,20 @@ const confirmDelete = async () => {
   }
 }
 
-// 确认批量删除
 const confirmBatchDelete = async () => {
-  if (selectedLoras.value.length === 0) return
+  if (selectedModels.value.length === 0) return
   
   deleting.value = true
   let successCount = 0
   let failCount = 0
   
   try {
-    for (const lora of selectedLoras.value) {
+    for (const model of selectedModels.value) {
       try {
-        await axios.delete(`/api/loras/delete?path=${encodeURIComponent(lora.path)}`)
+        await axios.delete(`/api/loras/delete?path=${encodeURIComponent(model.path)}`)
         successCount++
       } catch (e) {
-        console.error('Delete failed:', lora.name, e)
+        console.error('Delete failed:', model.name, e)
         failCount++
       }
     }
@@ -269,7 +343,7 @@ const confirmBatchDelete = async () => {
     }
     
     batchDeleteDialogVisible.value = false
-    fetchLoras()
+    fetchModels()
   } catch (e) {
     console.error('Batch delete error:', e)
     ElMessage.error('批量删除出错')
@@ -279,12 +353,12 @@ const confirmBatchDelete = async () => {
 }
 
 onMounted(() => {
-  fetchLoras()
+  fetchModels()
 })
 </script>
 
 <style scoped>
-.lora-manager {
+.model-manager {
   padding: 24px;
   max-width: 1200px;
   margin: 0 auto;
@@ -305,7 +379,25 @@ onMounted(() => {
   margin: 0;
 }
 
-.lora-card {
+.model-tabs {
+  margin-bottom: 16px;
+}
+
+.tab-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tab-badge {
+  margin-left: 4px;
+}
+
+:deep(.el-tabs__item) {
+  font-size: 14px;
+}
+
+.model-card {
   background: var(--el-bg-color);
 }
 
@@ -348,7 +440,7 @@ onMounted(() => {
   opacity: 1;
 }
 
-.lora-content {
+.model-content {
   min-height: 300px;
 }
 
@@ -360,6 +452,11 @@ onMounted(() => {
 
 .file-icon {
   color: var(--el-color-primary);
+}
+
+.default-hint {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 .delete-filename {
