@@ -208,6 +208,14 @@ def set_lora_path(model_type: str, path: Optional[str]):
     lora_cache[model_type] = path
     current_lora_path = path  # 向后兼容
 
+def clear_pipelines():
+    """清理所有加载的 pipeline 以释放显存"""
+    global pipelines, pipeline, current_model_type
+    pipelines.clear()
+    pipeline = None
+    current_model_type = None
+    print("[State] All pipelines cleared")
+
 # Generation state
 generation_status: Dict[str, Any] = {
     "running": False,

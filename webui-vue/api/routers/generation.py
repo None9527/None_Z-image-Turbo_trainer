@@ -45,8 +45,13 @@ except ImportError:
 router = APIRouter(prefix="/api", tags=["generation"])
 
 
-def load_pipeline_with_adapter(model_type: str = "zimage"):
-    """使用抽象层加载本地模型 Pipeline (仅支持 Z-Image)"""
+def load_pipeline_with_adapter(model_type: str = "zimage", transformer_path: str = None):
+    """使用抽象层加载本地模型 Pipeline (仅支持 Z-Image)
+    
+    Args:
+        model_type: 模型类型 (仅支持 zimage)
+        transformer_path: 可选的 finetune 权重路径 (.safetensors)
+    """
     model_path = get_model_path("zimage", "base")
     
     if not model_path.exists():
@@ -60,6 +65,38 @@ def load_pipeline_with_adapter(model_type: str = "zimage"):
         torch_dtype=dtype,
         local_files_only=True,
     )
+    
+    # 加载 finetune 权重（如果提供）
+    if transformer_path and Path(transformer_path).exists():
+        print(f"[Generation] Loading finetune weights from: {transformer_path}")
+        from safetensors.torch import load_file
+        finetune_state = load_file(transformer_path)
+        
+        # 获取 transformer 模块
+        transformer = pipe.transformer
+        current_state = transformer.state_dict()
+        
+        # 检查权重名称是否匹配
+        missing_keys = []
+        matched_keys = 0
+        for key in finetune_state.keys():
+            if key in current_state:
+                matched_keys += 1
+            else:
+                missing_keys.append(key)
+        
+        if matched_keys == 0:
+            print(f"[Generation] WARNING: No matching keys found! Finetune weights may be incompatible.")
+            print(f"[Generation] Finetune keys sample: {list(finetune_state.keys())[:5]}")
+            print(f"[Generation] Model keys sample: {list(current_state.keys())[:5]}")
+        else:
+            print(f"[Generation] Matched {matched_keys}/{len(finetune_state)} keys")
+            if missing_keys:
+                print(f"[Generation] Missing keys: {missing_keys[:5]}...")
+            
+            # 加载权重
+            transformer.load_state_dict(finetune_state, strict=False)
+            print(f"[Generation] Finetune weights loaded successfully!")
     
     if torch.cuda.is_available():
         pipe.enable_model_cpu_offload()
@@ -218,10 +255,20 @@ async def generate_image(req: GenerationRequest):
             generator = get_generator(OUTPUTS_DIR)
             
             # 获取或加载 Pipeline
-            pipe = state.get_pipeline(model_type)
+            # 如果指定了 transformer_path，需要重新加载 pipeline
+            transformer_path = req.transformer_path
+            cache_key = f"{model_type}:{transformer_path or 'default'}"
+            
+            pipe = state.get_pipeline(cache_key)
             if pipe is None:
-                pipe = load_pipeline_with_adapter(model_type)
-                state.set_pipeline(model_type, pipe)
+                # 清理旧的 pipeline 以释放显存
+                if transformer_path:
+                    state.clear_pipelines()
+                    if TORCH_AVAILABLE and torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                
+                pipe = load_pipeline_with_adapter(model_type, transformer_path)
+                state.set_pipeline(cache_key, pipe)
             
             # 转换参数
             params = GenerationParams(
@@ -305,10 +352,20 @@ async def generate_image_stream(req: GenerationRequest):
                 "message": f"Loading {model_type} model..."
             })
             
-            pipe = state.get_pipeline(model_type)
+            # 获取或加载 Pipeline（支持 finetune 模型）
+            transformer_path = req.transformer_path
+            cache_key = f"{model_type}:{transformer_path or 'default'}"
+            
+            pipe = state.get_pipeline(cache_key)
             if pipe is None:
-                pipe = load_pipeline_with_adapter(model_type)
-                state.set_pipeline(model_type, pipe)
+                # 清理旧的 pipeline 以释放显存
+                if transformer_path:
+                    state.clear_pipelines()
+                    if TORCH_AVAILABLE and torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                
+                pipe = load_pipeline_with_adapter(model_type, transformer_path)
+                state.set_pipeline(cache_key, pipe)
             
             # 转换参数
             params = GenerationParams(

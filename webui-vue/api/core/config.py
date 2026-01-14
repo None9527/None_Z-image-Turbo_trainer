@@ -165,6 +165,7 @@ class GenerationRequest(BaseModel):
     lora_scale: float = 1.0
     comparison_mode: bool = False
     model_type: str = "zimage"  # 仅支持 zimage
+    transformer_path: Optional[str] = None  # Finetune 模型路径
 
 class DeleteHistoryRequest(BaseModel):
     timestamps: List[str]
