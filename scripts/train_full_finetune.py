@@ -631,10 +631,10 @@ def main():
     )
     
     if use_adafactor_schedule:
-        # Adafactor 自适应模式使用其内置的 schedule，不需要外部 lr_scheduler
-        from transformers.optimization import AdafactorSchedule
-        lr_scheduler = AdafactorSchedule(optimizer)
-        logger.info("  📈 使用 Adafactor 内置学习率调度")
+        # Adafactor 自适应模式内部自动管理学习率，不需要外部 lr_scheduler
+        # 注意：不能使用 AdafactorSchedule，因为 accelerator.prepare() 返回的是 AcceleratedOptimizer
+        lr_scheduler = None
+        logger.info("  📈 Adafactor 自适应 LR 模式（无外部调度器）")
     else:
         lr_scheduler = get_scheduler(
             args.lr_scheduler,
@@ -788,7 +788,8 @@ def main():
             if accelerator.sync_gradients:
                 accelerator.clip_grad_norm_(trainable_params, args.max_grad_norm)
                 optimizer.step()
-                lr_scheduler.step()
+                if lr_scheduler is not None:
+                    lr_scheduler.step()
                 optimizer.zero_grad()
                 
                 global_step += 1
@@ -824,7 +825,11 @@ def main():
                 
                 # 打印日志（与 LoRA 脚本格式完全一致 + Kohya avr_loss）
                 if accelerator.is_main_process:
-                    current_lr = lr_scheduler.get_last_lr()[0]
+                    if lr_scheduler is not None:
+                        current_lr = lr_scheduler.get_last_lr()[0]
+                    else:
+                        # Adafactor 自适应模式：从 optimizer 获取学习率
+                        current_lr = optimizer.param_groups[0].get('lr', 0.0) or 0.0
                     print(f"[STEP] {global_step}/{max_train_steps} epoch={epoch+1}/{args.num_train_epochs} loss={avg_loss:.4f} avr={avr_loss:.4f} ema={ema_loss:.4f} l1={avg_l1:.4f} cos={avg_cos:.4f} freq={avg_freq:.4f} style={avg_style:.4f} L2={avg_l2:.4f} lr={current_lr:.2e}", flush=True)
                     
                     if writer:
