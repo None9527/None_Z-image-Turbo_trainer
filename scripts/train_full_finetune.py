@@ -623,13 +623,26 @@ def main():
         logger.info(f"  [MEM] After prepare(): Allocated={allocated:.2f}GB, Reserved={reserved:.2f}GB")
     
     max_train_steps = len(dataloader) * args.num_train_epochs // args.gradient_accumulation_steps
-    lr_scheduler = get_scheduler(
-        args.lr_scheduler,
-        optimizer=optimizer,
-        num_warmup_steps=args.lr_warmup_steps,
-        num_training_steps=max_train_steps,
-        num_cycles=args.lr_num_cycles,
+    
+    # 检查是否使用 Adafactor 自适应学习率模式
+    use_adafactor_schedule = (
+        args.optimizer_type == "Adafactor" and 
+        getattr(args, 'adafactor_relative_step', False)
     )
+    
+    if use_adafactor_schedule:
+        # Adafactor 自适应模式使用其内置的 schedule，不需要外部 lr_scheduler
+        from transformers.optimization import AdafactorSchedule
+        lr_scheduler = AdafactorSchedule(optimizer)
+        logger.info("  📈 使用 Adafactor 内置学习率调度")
+    else:
+        lr_scheduler = get_scheduler(
+            args.lr_scheduler,
+            optimizer=optimizer,
+            num_warmup_steps=args.lr_warmup_steps,
+            num_training_steps=max_train_steps,
+            num_cycles=args.lr_num_cycles,
+        )
     
     logger.info(f"  ✓ 总步数: {max_train_steps}")
     
