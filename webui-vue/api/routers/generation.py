@@ -24,7 +24,7 @@ except ImportError:
     torch = None
     print("[WARN] torch not available - generation features disabled")
 
-from core.config import OUTPUTS_DIR, PROJECT_ROOT, GenerationRequest, DeleteHistoryRequest, LORA_PATH, get_model_path
+from core.config import OUTPUTS_DIR, PROJECT_ROOT, GenerationRequest, DeleteHistoryRequest, LORA_PATH, FINETUNE_PATH, get_model_path
 from core import state
 from core.generation_core import GenerationParams, get_generator
 from routers.websocket import sync_broadcast_generation_progress
@@ -91,7 +91,7 @@ async def get_available_models():
 
 @router.get("/loras")
 async def get_loras():
-    """Scan for LoRA models in LORA_PATH directory"""
+    """Scan for LoRA models in LORA_PATH directory (output/lora)"""
     loras = []
     
     print(f"[LoRA] Scanning directory: {LORA_PATH}")
@@ -102,11 +102,12 @@ async def get_loras():
             for file in files:
                 if file.endswith(".safetensors"):
                     full_path = Path(root) / file
+                    file_size = full_path.stat().st_size
                     rel_path = full_path.relative_to(LORA_PATH)
                     loras.append({
                         "name": str(rel_path),
                         "path": str(full_path),
-                        "size": full_path.stat().st_size
+                        "size": file_size
                     })
     
     return {
@@ -118,7 +119,7 @@ async def get_loras():
 
 @router.get("/transformers")
 async def get_transformers():
-    """Scan for Transformer models (finetune outputs) in output directory"""
+    """Scan for Transformer models (finetune outputs) in FINETUNE_PATH directory (output/finetune)"""
     transformers = []
     
     # Default transformer path
@@ -131,14 +132,15 @@ async def get_transformers():
             "is_default": True
         })
     
-    # Scan output directory for finetune weights
-    if OUTPUTS_DIR.exists():
-        for root, _, files in os.walk(OUTPUTS_DIR):
+    # Scan FINETUNE_PATH for finetune weights
+    print(f"[Finetune] Scanning directory: {FINETUNE_PATH}")
+    if FINETUNE_PATH.exists():
+        for root, _, files in os.walk(FINETUNE_PATH):
             for file in files:
-                if file.endswith(".safetensors") and ("finetune" in file.lower() or "transformer" in file.lower() or "epoch" in file.lower() or "final" in file.lower()):
+                if file.endswith(".safetensors"):
                     full_path = Path(root) / file
                     try:
-                        rel_path = full_path.relative_to(OUTPUTS_DIR)
+                        rel_path = full_path.relative_to(FINETUNE_PATH)
                         transformers.append({
                             "name": str(rel_path),
                             "path": str(full_path),
@@ -150,7 +152,7 @@ async def get_transformers():
     
     return {
         "transformers": sorted(transformers, key=lambda x: (not x["is_default"], x["name"])),
-        "outputPath": str(OUTPUTS_DIR)
+        "finetunePath": str(FINETUNE_PATH)
     }
 
 

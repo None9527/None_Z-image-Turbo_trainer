@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from core.config import CONFIGS_DIR, OUTPUT_BASE_DIR, MODEL_PATH, SaveConfigRequest, PROJECT_ROOT, get_model_path
+from core.config import CONFIGS_DIR, OUTPUT_BASE_DIR, MODEL_PATH, SaveConfigRequest, PROJECT_ROOT, get_model_path, LORA_PATH, FINETUNE_PATH, CONTROLNET_PATH
 from core import state
 
 router = APIRouter(prefix="/api/training", tags=["training"])
@@ -550,7 +550,8 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         f'training_type = "{config.get("training_type", "lora")}"',
         f'condition_mode = "{config.get("condition_mode", "text2img")}"',
         f'dit = "{str(get_model_path(model_type, "transformer")).replace(chr(92), "/")}"',
-        f'output_dir = "{str(OUTPUT_BASE_DIR).replace(chr(92), "/")}"',
+        # 根据 training_type 动态设置输出目录
+        f'output_dir = "{str(FINETUNE_PATH if training_type == "finetune" else (CONTROLNET_PATH if training_type == "controlnet" else LORA_PATH)).replace(chr(92), "/")}"',
         "",
         "[acrf]",
         f"enable_turbo = {'false' if training_type == 'controlnet' else ('true' if config.get('acrf', {}).get('enable_turbo', True) else 'false')}",

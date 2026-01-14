@@ -65,19 +65,24 @@ def get_model_path(model_type: str = "zimage", component: str = "base") -> Path:
 # ============================================================================
 # 其他路径
 # ============================================================================
-LORA_PATH = _resolve_path("LORA_PATH", "./output")  # LoRA 模型输出目录
+OUTPUT_BASE_PATH = _resolve_path("LORA_PATH", "./output")  # 训练输出根目录
+LORA_PATH = OUTPUT_BASE_PATH / "lora"  # LoRA 模型输出目录
+FINETUNE_PATH = OUTPUT_BASE_PATH / "finetune"  # Finetune 模型输出目录
+CONTROLNET_PATH = OUTPUT_BASE_PATH / "controlnet"  # ControlNet 模型输出目录
 DATASETS_DIR = _resolve_path("DATASET_PATH", "./datasets")
 GENERATION_OUTPUT_PATH = _resolve_path("GENERATION_OUTPUT_PATH", "./outputs")  # 图片生成输出路径
 
 OUTPUTS_DIR = GENERATION_OUTPUT_PATH  # 图片生成输出目录
 CONFIGS_DIR = PROJECT_ROOT / "configs"
-OUTPUT_BASE_DIR = LORA_PATH  # LoRA 输出目录
+OUTPUT_BASE_DIR = OUTPUT_BASE_PATH  # 兼容旧代码
 
 # Create necessary directories
 OUTPUTS_DIR.mkdir(exist_ok=True)
 CONFIGS_DIR.mkdir(exist_ok=True)
 DATASETS_DIR.mkdir(parents=True, exist_ok=True)
 LORA_PATH.mkdir(parents=True, exist_ok=True)
+FINETUNE_PATH.mkdir(parents=True, exist_ok=True)
+CONTROLNET_PATH.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # 启动时路径诊断日志
