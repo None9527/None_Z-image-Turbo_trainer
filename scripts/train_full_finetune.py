@@ -357,13 +357,15 @@ def get_trainable_parameters(transformer, trainable_modules: str, freeze_embeddi
 
 
 def save_transformer_weights(transformer, path: str, dtype=torch.bfloat16):
-    """保存 Transformer 模型完整权重"""
-    state_dict = {}
-    for name, param in transformer.named_parameters():
-        # 保存所有参数（不只是可训练的）
-        state_dict[name] = param.data.to(dtype).cpu()
-    save_file(state_dict, path)
-    logger.info(f"[SAVE] 已保存完整模型 ({len(state_dict)} 个参数) 到 {path}")
+    """保存 Transformer 模型完整权重（使用 state_dict 确保与加载时键名一致）"""
+    # 使用 state_dict() 而不是 named_parameters()，确保键名与 load_state_dict 兼容
+    state_dict = transformer.state_dict()
+    # 转换为指定 dtype 并移到 CPU
+    converted_state = {}
+    for key, value in state_dict.items():
+        converted_state[key] = value.to(dtype).cpu()
+    save_file(converted_state, path)
+    logger.info(f"[SAVE] 已保存完整模型 ({len(converted_state)} 个参数) 到 {path}")
 
 
 def main():

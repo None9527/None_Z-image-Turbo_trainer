@@ -85,17 +85,22 @@ def load_pipeline_with_adapter(model_type: str = "zimage", transformer_path: str
             else:
                 missing_keys.append(key)
         
+        print(f"[Generation] Finetune keys count: {len(finetune_state)}")
+        print(f"[Generation] Model keys count: {len(current_state)}")
+        print(f"[Generation] Matched keys: {matched_keys}")
+        
         if matched_keys == 0:
             print(f"[Generation] WARNING: No matching keys found! Finetune weights may be incompatible.")
             print(f"[Generation] Finetune keys sample: {list(finetune_state.keys())[:5]}")
             print(f"[Generation] Model keys sample: {list(current_state.keys())[:5]}")
         else:
-            print(f"[Generation] Matched {matched_keys}/{len(finetune_state)} keys")
             if missing_keys:
-                print(f"[Generation] Missing keys: {missing_keys[:5]}...")
+                print(f"[Generation] Missing keys count: {len(missing_keys)}")
+                print(f"[Generation] Missing keys sample: {missing_keys[:5]}")
             
-            # 加载权重
-            transformer.load_state_dict(finetune_state, strict=False)
+            # 加载权重（使用 strict=False 允许部分匹配）
+            missing, unexpected = transformer.load_state_dict(finetune_state, strict=False)
+            print(f"[Generation] Load result - Missing: {len(missing)}, Unexpected: {len(unexpected)}")
             print(f"[Generation] Finetune weights loaded successfully!")
     
     if torch.cuda.is_available():
