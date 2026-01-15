@@ -223,13 +223,29 @@ async def download_lora(path: str):
 
 @router.delete("/loras/delete")
 async def delete_lora(path: str):
-    """Delete a LoRA model file"""
+    """Delete a LoRA or Finetune model file
+    
+    Supports deleting files from both LORA_PATH and FINETUNE_PATH directories.
+    """
     file_path = Path(path)
     
+    # 验证文件是否在允许的目录下 (LORA_PATH 或 FINETUNE_PATH)
+    is_valid_path = False
     try:
         file_path.resolve().relative_to(LORA_PATH.resolve())
+        is_valid_path = True
     except ValueError:
-        raise HTTPException(status_code=403, detail="Access denied")
+        pass
+    
+    if not is_valid_path:
+        try:
+            file_path.resolve().relative_to(FINETUNE_PATH.resolve())
+            is_valid_path = True
+        except ValueError:
+            pass
+    
+    if not is_valid_path:
+        raise HTTPException(status_code=403, detail="Access denied: file not in allowed directories")
     
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
