@@ -157,24 +157,55 @@ def load_transformer_state_dict(transformer_path: str) -> Dict[str, torch.Tensor
     """
     加载 Transformer 模型的 state_dict
     
-    支持两种格式：
+    支持三种格式：
     1. 目录格式 (diffusers): transformer_path/diffusion_pytorch_model.safetensors
-    2. 单文件格式: xxx.safetensors
+    2. 分片格式 (sharded): transformer_path/diffusion_pytorch_model-00001-of-00003.safetensors + index.json
+    3. 单文件格式: xxx.safetensors
     """
+    import json
     path = Path(transformer_path)
     
     if path.is_dir():
-        # diffusers 格式目录
+        # 检查是否是分片格式 (sharded)
+        index_file = path / "diffusion_pytorch_model.safetensors.index.json"
+        if index_file.exists():
+            logger.info(f"  检测到分片模型格式 (sharded)")
+            with open(index_file, "r") as f:
+                index_data = json.load(f)
+            
+            # 获取所有分片文件
+            weight_map = index_data.get("weight_map", {})
+            shard_files = set(weight_map.values())
+            logger.info(f"  分片文件: {len(shard_files)} 个")
+            
+            # 加载所有分片
+            merged_state = {}
+            for shard_file in tqdm(sorted(shard_files), desc="加载分片"):
+                shard_path = path / shard_file
+                if not shard_path.exists():
+                    raise FileNotFoundError(f"分片文件不存在: {shard_path}")
+                shard_state = load_file(str(shard_path))
+                merged_state.update(shard_state)
+            
+            return merged_state
+        
+        # 单文件 diffusers 格式
         model_file = path / "diffusion_pytorch_model.safetensors"
         if not model_file.exists():
-            # 尝试其他可能的文件名
             model_file = path / "model.safetensors"
         if not model_file.exists():
-            # 尝试 .bin 格式
             model_file = path / "diffusion_pytorch_model.bin"
             if model_file.exists():
                 return torch.load(model_file, map_location="cpu")
         if not model_file.exists():
+            # 尝试找任何 .safetensors 文件
+            safetensors_files = list(path.glob("*.safetensors"))
+            if safetensors_files:
+                logger.info(f"  找到 {len(safetensors_files)} 个 safetensors 文件，尝试合并加载")
+                merged_state = {}
+                for sf in tqdm(sorted(safetensors_files), desc="加载文件"):
+                    merged_state.update(load_file(str(sf)))
+                return merged_state
             raise FileNotFoundError(f"找不到模型文件: {path}")
         return load_file(str(model_file))
     else:
