@@ -178,8 +178,12 @@ def main():
         gradient_accumulation_steps=args.gradient_accumulation_steps,
     )
     
-    if args.seed is not None:
+    # seed=-1 表示完全随机（不设置固定种子）
+    if args.seed is not None and args.seed >= 0:
         set_seed(args.seed)
+        logger.info(f"🎲 固定种子: {args.seed}")
+    else:
+        logger.info("🎲 随机模式: 每次训练使用不同的随机状态")
     
     # Determine weight dtype
     weight_dtype = torch.float32
