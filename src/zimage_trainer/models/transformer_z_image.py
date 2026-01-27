@@ -329,6 +329,7 @@ class ZImageTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOr
         t_scale=1000.0,
         axes_dims=[32, 48, 48],
         axes_lens=[1024, 512, 512],
+        **kwargs,
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
