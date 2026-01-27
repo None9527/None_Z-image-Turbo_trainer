@@ -26,6 +26,7 @@ from .mse_loss import (
 )
 from .frequency_aware_loss import FrequencyAwareLoss, AdaptiveFrequencyLoss
 from .style_structure_loss import StyleStructureLoss, LatentStyleStructureLoss
+from .dpo_loss import DPOLoss, DPOLossWithSNR
 
 __all__ = [
     # 标准损失 (推荐)
@@ -45,4 +46,8 @@ __all__ = [
     # 风格损失
     "StyleStructureLoss",
     "LatentStyleStructureLoss",
+    # DPO 损失
+    "DPOLoss",
+    "DPOLossWithSNR",
 ]
+
