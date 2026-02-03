@@ -1,73 +1,109 @@
 {
   "name": "default",
-  "model_type": "zimage",
+  "training_type": "lora",
+  "condition_mode": "text2img",
   "acrf": {
-    "enable_turbo": true,
+    "enable_turbo": false,
     "turbo_steps": 10,
     "shift": 3,
-    "jitter_scale": 0.02,
-    "use_dynamic_shifting": true,
+    "jitter_scale": 0,
+    "use_dynamic_shift": true,
     "base_shift": 0.5,
     "max_shift": 1.15,
-    "snr_gamma": 5,
-    "snr_floor": 0.1,
-    "use_anchor": true,
+    "snr_gamma": 0,
+    "snr_floor": 0,
     "raft_mode": true,
     "free_stream_ratio": 0.3,
-    "latent_jitter_scale": 0
+    "l2_schedule_mode": "constant",
+    "l2_initial_ratio": 1,
+    "l2_final_ratio": 0.3,
+    "l2_milestones": "",
+    "l2_include_anchor": false,
+    "l2_anchor_ratio": 0.3,
+    "latent_jitter_scale": 0,
+    "enable_timestep_aware_loss": false,
+    "timestep_high_threshold": 0.7,
+    "timestep_low_threshold": 0.3,
+    "enable_curvature": false,
+    "lambda_curvature": 0.05,
+    "curvature_interval": 10,
+    "curvature_start_epoch": 0,
+    "cfg_training": false,
+    "cfg_scale": 7,
+    "cfg_training_ratio": 0.3,
+    "use_anchor": true,
+    "use_dynamic_shifting": true
   },
   "network": {
-    "dim": 16,
-    "alpha": 16
+    "dim": 64,
+    "alpha": 32
+  },
+  "lora": {
+    "resume_training": false,
+    "resume_lora_path": "",
+    "train_adaln": false,
+    "train_norm": false,
+    "train_single_stream": false
+  },
+  "controlnet": {
+    "resume_training": false,
+    "controlnet_path": "",
+    "control_types": [
+      "canny"
+    ],
+    "conditioning_scale": 0.75
   },
   "optimizer": {
-    "type": "AdamW8bit",
-    "learning_rate": "1e-4"
+    "type": "AdamWFP8",
+    "learning_rate": "1e-4",
+    "relative_step": true
   },
   "training": {
-    "output_name": "zimage-lora",
-    "learning_rate": 0.0001,
-    "learning_rate_str": "1e-4",
-    "weight_decay": 0,
-    "lr_scheduler": "constant",
-    "lr_warmup_steps": 0,
+    "output_name": "z-lora",
+    "learning_rate": 5e-05,
+    "learning_rate_str": "5e-5",
+    "weight_decay": 0.001,
+    "lr_scheduler": "constant_with_warmup",
+    "lr_warmup_steps": 200,
     "lr_num_cycles": 1,
-    "lambda_l1": 1,
-    "lambda_cosine": 0.1,
-    "enable_freq": true,
+    "lambda_l1": 0,
+    "lambda_cosine": 0,
+    "enable_freq": false,
     "lambda_freq": 0.3,
     "alpha_hf": 1,
-    "beta_lf": 0.2,
-    "enable_style": true,
-    "lambda_style": 0.3,
-    "lambda_struct": 1,
+    "beta_lf": 0.3,
+    "enable_style": false,
+    "lambda_style": 0.2,
     "lambda_light": 0.5,
     "lambda_color": 0.3,
-    "lambda_tex": 0.5,
     "lambda_fft": 0
   },
   "dataset": {
     "batch_size": 1,
     "shuffle": true,
     "enable_bucket": true,
-    "datasets": [
-      {
-        "cache_directory": "D:\\AI\\None_Z-image-Turbo_trainer\\datasets\\1",
-        "num_repeats": 1,
-        "resolution_limit": 1024
-      }
-    ]
+    "drop_text_ratio": 0,
+    "datasets": []
+  },
+  "reg_dataset": {
+    "enabled": false,
+    "weight": 1,
+    "ratio": 0.5,
+    "datasets": []
   },
   "advanced": {
     "max_grad_norm": 1,
     "gradient_checkpointing": true,
     "blocks_to_swap": 0,
-    "num_train_epochs": 10,
+    "num_train_epochs": 20,
     "save_every_n_epochs": 1,
-    "gradient_accumulation_steps": 4,
+    "gradient_accumulation_steps": 1,
     "mixed_precision": "bf16",
-    "seed": 42
+    "seed": 42,
+    "num_gpus": 1,
+    "gpu_ids": ""
   },
-  "modified": "2025-12-10T16:08:07.960869",
-  "created": "2025-12-04T10:46:26.582307"
+  "model_type": "zimage",
+  "created": "2026-01-13T18:58:55.740025",
+  "modified": "2026-02-03T22:19:58.199314"
 }

@@ -1,5 +1,5 @@
 {
-  "name": "123",
+  "name": "标准Z",
   "training_type": "lora",
   "condition_mode": "text2img",
   "acrf": {
