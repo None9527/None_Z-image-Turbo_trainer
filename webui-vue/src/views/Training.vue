@@ -21,7 +21,7 @@
       </div>
       <div class="status-info">
         <h2>{{ statusText }}</h2>
-        <p v-if="isLoading">正在加载 Transformer、VAE、Text Encoder...</p>
+        <p v-if="isLoading">正在加载 Transformer...</p>
         <p v-else-if="isRunning">
           Epoch {{ progress.currentEpoch }}/{{ progress.totalEpochs }} · 
           Step {{ progress.currentStep }}/{{ progress.totalSteps }}
