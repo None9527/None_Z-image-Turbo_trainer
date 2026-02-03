@@ -299,10 +299,10 @@ const previewSchema: PreviewSection[] = [
     ]
   },
   {
-    title: 'L2 混合损失',
+    title: 'MSE L2 损失',
     showIf: (c) => c.acrf?.raft_mode && c.training_type !== 'controlnet',
     params: [
-      { label: 'L2 混合', path: 'acrf.raft_mode', format: 'boolean', highlight: true },
+      { label: 'MSE L2', path: 'acrf.raft_mode', format: 'boolean', highlight: true },
       { label: '调度模式', path: 'acrf.l2_schedule_mode', defaultValue: 'constant' },
       { label: 'L2 起始比例', path: 'acrf.l2_initial_ratio', format: 'percent', defaultValue: 0.3 },
       { label: 'L2 结束比例', path: 'acrf.l2_final_ratio', format: 'percent', defaultValue: 0.3,

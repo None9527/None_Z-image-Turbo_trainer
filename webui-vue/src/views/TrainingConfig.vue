@@ -805,10 +805,10 @@
               <el-input-number v-model="config.acrf.snr_floor" :min="0" :max="0.5" :step="0.01" controls-position="right" class="input-fixed" />
             </div>
 
-            <div class="subsection-label">MSE/L2 混合损失（构图增强）</div>
+            <div class="subsection-label">MSE L2 损失（构图增强）</div>
             <div class="control-row">
               <span class="label">
-                启用 L2 混合
+                启用 MSE L2
                 <el-tooltip content="同batch混合锚点流+自由流L2损失，增强构图学习能力" placement="top">
                   <el-icon class="help-icon"><QuestionFilled /></el-icon>
                 </el-tooltip>
