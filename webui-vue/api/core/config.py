@@ -65,10 +65,10 @@ def get_model_path(model_type: str = "zimage", component: str = "base") -> Path:
 # ============================================================================
 # 其他路径
 # ============================================================================
-OUTPUT_BASE_PATH = _resolve_path("LORA_PATH", "./output")  # 训练输出根目录
-LORA_PATH = OUTPUT_BASE_PATH / "lora"  # LoRA 模型输出目录
-FINETUNE_PATH = OUTPUT_BASE_PATH / "finetune"  # Finetune 模型输出目录
-CONTROLNET_PATH = OUTPUT_BASE_PATH / "controlnet"  # ControlNet 模型输出目录
+OUTPUT_BASE_PATH = _resolve_path("OUTPUT_PATH", "./output")  # 训练输出根目录
+LORA_PATH = _resolve_path("LORA_PATH", "") or (OUTPUT_BASE_PATH / "lora")  # LoRA 模型输出目录
+FINETUNE_PATH = _resolve_path("FINETUNE_PATH", "") or (OUTPUT_BASE_PATH / "finetune")  # Finetune 模型输出目录
+CONTROLNET_PATH = _resolve_path("CONTROLNET_PATH", "") or (OUTPUT_BASE_PATH / "controlnet")  # ControlNet 模型输出目录
 DATASETS_DIR = _resolve_path("DATASET_PATH", "./datasets")
 GENERATION_OUTPUT_PATH = _resolve_path("GENERATION_OUTPUT_PATH", "./outputs")  # 图片生成输出路径
 
@@ -90,17 +90,24 @@ CONTROLNET_PATH.mkdir(parents=True, exist_ok=True)
 print("=" * 60)
 print("[CONFIG] 路径配置诊断")
 print("=" * 60)
-print(f"[CONFIG] PROJECT_ROOT     = {PROJECT_ROOT}")
-print(f"[CONFIG] .env 文件路径     = {PROJECT_ROOT / '.env'}")
-print(f"[CONFIG] .env 文件存在     = {(PROJECT_ROOT / '.env').exists()}")
+print(f"[CONFIG] PROJECT_ROOT          = {PROJECT_ROOT}")
+print(f"[CONFIG] .env 文件存在          = {(PROJECT_ROOT / '.env').exists()}")
 print("-" * 60)
-print(f"[CONFIG] DATASET_PATH env = {os.getenv('DATASET_PATH', '<未设置>')}")
-print(f"[CONFIG] DATASETS_DIR     = {DATASETS_DIR}")
-print(f"[CONFIG] DATASETS_DIR 存在 = {DATASETS_DIR.exists()}")
+print(f"[CONFIG] MODEL_PATH (env)      = {os.getenv('MODEL_PATH', '<未设置>')}")
+print(f"[CONFIG] MODEL_PATH            = {MODEL_PATH}")
+print(f"[CONFIG] MODEL_PATH 存在        = {MODEL_PATH.exists() if MODEL_PATH else False}")
 print("-" * 60)
-print(f"[CONFIG] LORA_PATH env    = {os.getenv('LORA_PATH', '<未设置>')}")
-print(f"[CONFIG] LORA_PATH        = {LORA_PATH}")
-print(f"[CONFIG] LORA_PATH 存在   = {LORA_PATH.exists()}")
+print(f"[CONFIG] DATASET_PATH (env)    = {os.getenv('DATASET_PATH', '<未设置>')}")
+print(f"[CONFIG] DATASETS_DIR          = {DATASETS_DIR}")
+print("-" * 60)
+print(f"[CONFIG] OUTPUT_PATH (env)     = {os.getenv('OUTPUT_PATH', '<未设置>')}")
+print(f"[CONFIG] OUTPUT_BASE_PATH      = {OUTPUT_BASE_PATH}")
+print(f"[CONFIG]   └── LORA_PATH       = {LORA_PATH}")
+print(f"[CONFIG]   └── FINETUNE_PATH   = {FINETUNE_PATH}")
+print(f"[CONFIG]   └── CONTROLNET_PATH = {CONTROLNET_PATH}")
+print("-" * 60)
+print(f"[CONFIG] GENERATION_OUTPUT_PATH (env) = {os.getenv('GENERATION_OUTPUT_PATH', '<未设置>')}")
+print(f"[CONFIG] GENERATION_OUTPUT_PATH       = {GENERATION_OUTPUT_PATH}")
 print("=" * 60)
 
 # ============================================================================
