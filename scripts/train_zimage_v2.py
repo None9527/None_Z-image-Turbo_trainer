@@ -637,9 +637,17 @@ def main():
         try:
             from zimage_trainer.optimizers import AdamWFP8
             optimizer = AdamWFP8(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
-            logger.info("  🔢 AdamWFP8 优化器 (FP8 E5M2 状态存储，精度优于 uint8)")
+            logger.info("  🔢 AdamWFP8 优化器 (FP8 E4M3/E5M2 混合精度)")
         except (ImportError, RuntimeError) as e:
             logger.warning(f"  ⚠ AdamWFP8 不可用 ({e})，使用标准 AdamW")
+            optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
+    elif args.optimizer_type == "AdamWBF16":
+        try:
+            from zimage_trainer.optimizers import AdamWBF16
+            optimizer = AdamWBF16(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
+            logger.info("  🔢 AdamWBF16 优化器 (BF16 状态存储，显存节省 50%)")
+        except (ImportError, RuntimeError) as e:
+            logger.warning(f"  ⚠ AdamWBF16 不可用 ({e})，使用标准 AdamW")
             optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
     else:  # AdamW
         optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)

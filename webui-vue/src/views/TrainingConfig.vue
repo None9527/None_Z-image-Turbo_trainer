@@ -409,6 +409,7 @@
                 <el-option label="AdamW" value="AdamW" />
                 <el-option label="AdamW8bit (显存优化)" value="AdamW8bit" />
                 <el-option label="AdamWFP8 (FP8精度更高)" value="AdamWFP8" />
+                <el-option label="AdamWBF16 (BF16平衡)" value="AdamWBF16" />
                 <el-option label="Adafactor" value="Adafactor" />
                 <el-option label="Prodigy (自适应LR)" value="Prodigy" />
                 <el-option label="Lion (显存低)" value="Lion" />
