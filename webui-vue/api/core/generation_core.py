@@ -98,11 +98,32 @@ class LoRAManager:
             return False
     
     def set_scale(self, pipe: Any, scale: float):
-        """设置 LoRA 权重"""
-        pipe.cross_attention_kwargs = {"scale": scale}
+        """设置 LoRA 权重 - 使用 set_adapters API"""
+        try:
+            # 优先使用 set_adapters (diffusers >= 0.24)
+            if hasattr(pipe, 'set_adapters'):
+                # 获取当前加载的 adapter 名称
+                adapter_names = getattr(pipe, 'get_active_adapters', lambda: ['default'])()
+                if adapter_names:
+                    pipe.set_adapters(adapter_names, adapter_weights=[scale] * len(adapter_names))
+                    print(f"[LoRA] Scale set via set_adapters: {scale}")
+            else:
+                # 回退到 cross_attention_kwargs
+                pipe.cross_attention_kwargs = {"scale": scale}
+                print(f"[LoRA] Scale set via cross_attention_kwargs: {scale}")
+        except Exception as e:
+            print(f"[LoRA] Warning: Failed to set scale: {e}")
+            pipe.cross_attention_kwargs = {"scale": scale}
     
     def clear_scale(self, pipe: Any):
         """清除 LoRA 权重设置"""
+        try:
+            if hasattr(pipe, 'set_adapters'):
+                adapter_names = getattr(pipe, 'get_active_adapters', lambda: ['default'])()
+                if adapter_names:
+                    pipe.set_adapters(adapter_names, adapter_weights=[1.0] * len(adapter_names))
+        except Exception:
+            pass
         pipe.cross_attention_kwargs = None
 
 
