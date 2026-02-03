@@ -59,6 +59,19 @@
                 />
               </div>
 
+              <!-- Negative Prompt -->
+              <div class="param-group">
+                <div class="group-label">负面提示词 (NEGATIVE)</div>
+                <el-input
+                  v-model="params.negative_prompt"
+                  type="textarea"
+                  :rows="2"
+                  placeholder="不想要的内容，如：blurry, low quality, watermark..."
+                  resize="none"
+                  class="prompt-input negative-prompt"
+                />
+              </div>
+
               <!-- LoRA -->
               <div class="param-group">
                 <div class="group-label">LORA 模型</div>
