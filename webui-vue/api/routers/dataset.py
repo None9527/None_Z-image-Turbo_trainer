@@ -119,6 +119,162 @@ def _invalidate_dataset_cache(path: Path):
         del _dataset_cache[parent_str]
 
 
+# ============================================================================
+# 配对数据集支持 (Img2Img / ControlNet / Omni)
+# ============================================================================
+
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'}
+
+
+def _detect_dataset_type(path: Path) -> dict:
+    """检测数据集类型和子目录结构
+    
+    支持的目录结构:
+    - standard: 普通单图数据集
+    - paired: source/ + target/ (Img2Img/ControlNet)
+    - omni: source/ + target/ + conditions/ (多图条件)
+    """
+    source_dir = path / "source"
+    target_dir = path / "target"
+    conditions_dir = path / "conditions"
+    
+    def has_images(dir_path: Path) -> bool:
+        if not dir_path.exists():
+            return False
+        return any(f.suffix.lower() in IMAGE_EXTENSIONS for f in dir_path.iterdir() if f.is_file())
+    
+    has_source = has_images(source_dir)
+    has_target = has_images(target_dir)
+    has_conditions = has_images(conditions_dir)
+    
+    if has_source and has_target:
+        if has_conditions:
+            return {"type": "omni", "subdirs": ["source", "target", "conditions"]}
+        return {"type": "paired", "subdirs": ["source", "target"]}
+    return {"type": "standard", "subdirs": []}
+
+
+def _build_image_info(file: Path, dim_cache: dict, root_path: Path) -> dict:
+    """构建单个图片的信息字典"""
+    try:
+        stat = file.stat()
+        size = stat.st_size
+    except:
+        size = 0
+    
+    # 读取标注文件
+    caption = None
+    caption_file = file.with_suffix('.txt')
+    if caption_file.exists():
+        try:
+            caption = caption_file.read_text(encoding='utf-8').strip()
+        except:
+            pass
+    
+    # 检查缓存状态
+    has_latent_cache = any(
+        list(file.parent.glob(f"{file.stem}_*{suffix}"))[:1]
+        for suffix in ["_zi.safetensors", "_lc.safetensors"]
+    )
+    has_text_cache = any(
+        (file.parent / f"{file.stem}{suffix}").exists()
+        for suffix in ALL_TEXT_SUFFIXES
+    )
+    
+    # 检查 SigLIP 缓存 (Omni 模式)
+    has_siglip_cache = (file.parent / f"{file.stem}_zi_siglip.safetensors").exists()
+    
+    # 获取图片尺寸
+    img_width, img_height = _get_image_dimensions(file, dim_cache)
+    
+    encoded_path = urllib.parse.quote(str(file), safe='')
+    
+    return {
+        "path": str(file),
+        "filename": file.name,
+        "stem": file.stem,  # 用于配对匹配
+        "width": img_width,
+        "height": img_height,
+        "size": size,
+        "caption": caption,
+        "hasLatentCache": has_latent_cache,
+        "hasTextCache": has_text_cache,
+        "hasSiglipCache": has_siglip_cache,
+        "thumbnailUrl": f"/api/dataset/thumbnail?path={encoded_path}"
+    }
+
+
+def _build_image_pairs(path: Path, dataset_type: str, dim_cache: dict) -> list:
+    """根据文件名匹配构建配对关系
+    
+    返回结构: [{"id": "img001", "source": {...}, "target": {...}, "conditions": [...]}]
+    """
+    if dataset_type == "standard":
+        return []
+    
+    source_dir = path / "source"
+    target_dir = path / "target"
+    conditions_dir = path / "conditions"
+    
+    # 收集 target 图片 (以 target 为主)
+    target_files = {}
+    if target_dir.exists():
+        for f in target_dir.iterdir():
+            if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS:
+                target_files[f.stem] = f
+    
+    # 收集 source 图片
+    source_files = {}
+    if source_dir.exists():
+        for f in source_dir.iterdir():
+            if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS:
+                source_files[f.stem] = f
+    
+    # 收集 conditions 图片 (Omni 模式)
+    # 命名约定: {base_name}_cond1.png, {base_name}_cond2.png, ...
+    # 或者: {base_name}_001.png, {base_name}_002.png, ...
+    condition_files = {}  # {base_name: [file1, file2, ...]}
+    if dataset_type == "omni" and conditions_dir.exists():
+        for f in conditions_dir.iterdir():
+            if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS:
+                stem = f.stem
+                # 尝试提取 base_name (去掉 _condN 或 _NNN 后缀)
+                base_name = stem
+                for pattern in ['_cond', '_']:
+                    if pattern in stem:
+                        parts = stem.rsplit(pattern, 1)
+                        if len(parts) == 2 and (parts[1].isdigit() or parts[1].startswith('cond')):
+                            base_name = parts[0]
+                            break
+                
+                if base_name not in condition_files:
+                    condition_files[base_name] = []
+                condition_files[base_name].append(f)
+    
+    # 构建配对
+    pairs = []
+    for stem, target_file in sorted(target_files.items()):
+        pair = {
+            "id": stem,
+            "target": _build_image_info(target_file, dim_cache, path),
+        }
+        
+        # 匹配 source
+        if stem in source_files:
+            pair["source"] = _build_image_info(source_files[stem], dim_cache, path)
+        
+        # 匹配 conditions (Omni)
+        if dataset_type == "omni" and stem in condition_files:
+            pair["conditions"] = [
+                _build_image_info(f, dim_cache, path) 
+                for f in sorted(condition_files[stem], key=lambda x: x.name)
+            ]
+        
+        pairs.append(pair)
+    
+    return pairs
+
+
 @router.post("/scan")
 async def scan_dataset(request: DatasetScanRequest):
     """Scan a directory for images (带缓存的极速模式)
@@ -142,89 +298,106 @@ async def scan_dataset(request: DatasetScanRequest):
     
     def _scan_files_sync():
         """同步文件扫描（在线程池中执行）"""
-        # 使用缓存获取文件列表和总大小（翻页不重新遍历）
-        all_files, cached_total_size = _get_cached_files_and_size(path)
-        
-        total_count = len(all_files)
-        total_pages = (total_count + page_size - 1) // page_size
-        
-        # 分页
-        start_idx = (page - 1) * page_size
-        end_idx = min(start_idx + page_size, total_count)
-        page_files = all_files[start_idx:end_idx]
+        # 检测数据集类型
+        dataset_info = _detect_dataset_type(path)
+        dataset_type = dataset_info["type"]
+        subdirs = dataset_info["subdirs"]
         
         # 加载尺寸缓存
         dim_cache = _load_dimension_cache(path)
         cache_modified = False
+        old_cache_size = len(dim_cache)
         
-        # 构建响应（恢复标注和缓存状态）
-        images = []
-        for file in page_files:
-            try:
-                stat = file.stat()
-                size = stat.st_size
-                
-                # 读取标注文件
-                caption = None
-                caption_file = file.with_suffix('.txt')
-                if caption_file.exists():
-                    try:
-                        caption = caption_file.read_text(encoding='utf-8').strip()
-                    except:
-                        pass
-                
-                # 检查缓存状态（只检查当前页 100 张，可接受的延迟）
-                has_latent_cache = any(
-                    list(file.parent.glob(f"{file.stem}_*{suffix}"))[:1]
-                    for suffix in ["_zi.safetensors", "_lc.safetensors"]
-                )
-                has_text_cache = any(
-                    (file.parent / f"{file.stem}{suffix}").exists()
-                    for suffix in ALL_TEXT_SUFFIXES
-                )
-                
-                # 获取图片尺寸（使用缓存系统）
-                old_cache_size = len(dim_cache)
-                img_width, img_height = _get_image_dimensions(file, dim_cache)
-                if len(dim_cache) > old_cache_size:
-                    cache_modified = True
-                
-                encoded_path = urllib.parse.quote(str(file), safe='')
-                images.append({
-                    "path": str(file),
-                    "filename": file.name,
-                    "width": img_width,
-                    "height": img_height,
-                    "size": size,
-                    "caption": caption,
-                    "hasLatentCache": has_latent_cache,
-                    "hasTextCache": has_text_cache,
-                    "thumbnailUrl": f"/api/dataset/thumbnail?path={encoded_path}"
-                })
-            except Exception:
-                continue
-        
-        # 保存尺寸缓存（仅当有新增时）
-        if cache_modified:
-            _save_dimension_cache(path, dim_cache)
-        
-        return {
-            "path": str(path),
-            "name": path.name,
-            "imageCount": total_count,
-            "totalSize": cached_total_size,  # 使用缓存的总大小
-            "images": images,
-            "totalLatentCached": None,
-            "totalTextCached": None,
-            "pagination": {
-                "page": page,
-                "pageSize": page_size,
-                "totalPages": total_pages,
-                "totalCount": total_count,
-                "hasNext": page < total_pages,
-                "hasPrev": page > 1
+        # 根据数据集类型选择处理方式
+        if dataset_type in ("paired", "omni"):
+            # 配对模式: 构建配对关系
+            pairs = _build_image_pairs(path, dataset_type, dim_cache)
+            total_count = len(pairs)
+            total_pages = (total_count + page_size - 1) // page_size
+            
+            # 分页
+            start_idx = (page - 1) * page_size
+            end_idx = min(start_idx + page_size, total_count)
+            page_pairs = pairs[start_idx:end_idx]
+            
+            # 保存尺寸缓存
+            if len(dim_cache) > old_cache_size:
+                _save_dimension_cache(path, dim_cache)
+            
+            # 计算总大小 (source + target + conditions)
+            total_size = 0
+            for pair in pairs:
+                if "source" in pair:
+                    total_size += pair["source"].get("size", 0)
+                total_size += pair["target"].get("size", 0)
+                for cond in pair.get("conditions", []):
+                    total_size += cond.get("size", 0)
+            
+            return {
+                "path": str(path),
+                "name": path.name,
+                "datasetType": dataset_type,
+                "subdirectories": subdirs,
+                "imageCount": total_count,
+                "totalSize": total_size,
+                "images": [],  # 配对模式下为空，使用 pairs
+                "pairs": page_pairs,
+                "totalLatentCached": None,
+                "totalTextCached": None,
+                "pagination": {
+                    "page": page,
+                    "pageSize": page_size,
+                    "totalPages": total_pages,
+                    "totalCount": total_count,
+                    "hasNext": page < total_pages,
+                    "hasPrev": page > 1
+                }
             }
-        }
+        else:
+            # 标准模式: 保持原有逻辑
+            all_files, cached_total_size = _get_cached_files_and_size(path)
+            
+            total_count = len(all_files)
+            total_pages = (total_count + page_size - 1) // page_size
+            
+            # 分页
+            start_idx = (page - 1) * page_size
+            end_idx = min(start_idx + page_size, total_count)
+            page_files = all_files[start_idx:end_idx]
+            
+            # 构建响应（恢复标注和缓存状态）
+            images = []
+            for file in page_files:
+                try:
+                    info = _build_image_info(file, dim_cache, path)
+                    images.append(info)
+                except Exception:
+                    continue
+            
+            # 保存尺寸缓存（仅当有新增时）
+            if len(dim_cache) > old_cache_size:
+                _save_dimension_cache(path, dim_cache)
+            
+            return {
+                "path": str(path),
+                "name": path.name,
+                "datasetType": "standard",
+                "subdirectories": [],
+                "imageCount": total_count,
+                "totalSize": cached_total_size,
+                "images": images,
+                "pairs": [],  # 标准模式下为空
+                "totalLatentCached": None,
+                "totalTextCached": None,
+                "pagination": {
+                    "page": page,
+                    "pageSize": page_size,
+                    "totalPages": total_pages,
+                    "totalCount": total_count,
+                    "hasNext": page < total_pages,
+                    "hasPrev": page > 1
+                }
+            }
     
     # 在线程池中执行，不阻塞事件循环
     return await asyncio.to_thread(_scan_files_sync)

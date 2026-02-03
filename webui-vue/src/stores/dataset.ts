@@ -5,14 +5,27 @@ import axios from 'axios'
 export interface DatasetImage {
   path: string
   filename: string
+  stem?: string  // 文件名不含扩展名 (用于配对匹配)
   width: number
   height: number
   size: number
   caption?: string
   hasLatentCache: boolean
   hasTextCache: boolean
+  hasSiglipCache?: boolean  // Omni 模式 SigLIP 缓存
   thumbnailUrl: string
 }
+
+// 配对图片 (Img2Img / ControlNet / Omni)
+export interface ImagePair {
+  id: string                    // 配对 ID (基于文件名)
+  source?: DatasetImage         // 源图 (Img2Img/ControlNet)
+  target: DatasetImage          // 目标图
+  conditions?: DatasetImage[]   // 条件图列表 (Omni 多图)
+}
+
+// 数据集类型
+export type DatasetType = 'standard' | 'paired' | 'omni'
 
 export interface Pagination {
   page: number
@@ -33,6 +46,10 @@ export interface DatasetInfo {
   // 全局缓存统计
   totalLatentCached?: number
   totalTextCached?: number
+  // 配对数据集支持
+  datasetType?: DatasetType      // 数据集类型: standard | paired | omni
+  subdirectories?: string[]      // 子目录列表: ["source", "target", ...]
+  pairs?: ImagePair[]            // 配对数据 (仅 paired/omni 模式)
 }
 
 // 本地数据集列表项（轻量级，只用于列表展示）
@@ -61,6 +78,12 @@ export const useDatasetStore = defineStore('dataset', () => {
   const pagination = ref<Pagination | null>(null)
 
   const currentImages = computed(() => currentDataset.value?.images || [])
+  
+  // 配对数据集支持
+  const currentPairs = computed(() => currentDataset.value?.pairs || [])
+  const datasetType = computed(() => currentDataset.value?.datasetType || 'standard')
+  const isPairedMode = computed(() => datasetType.value !== 'standard')
+  const isOmniMode = computed(() => datasetType.value === 'omni')
 
   // ============================================================================
   // 数据集列表操作
@@ -310,6 +333,11 @@ export const useDatasetStore = defineStore('dataset', () => {
     currentImages,
     isLoading,
     selectedImages,
+    // 配对数据集支持
+    currentPairs,
+    datasetType,
+    isPairedMode,
+    isOmniMode,
     // 本地数据集列表
     localDatasets,
     datasetsDir,

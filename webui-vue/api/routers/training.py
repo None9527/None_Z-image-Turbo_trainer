@@ -436,19 +436,31 @@ async def start_training(config: Dict[str, Any]):
             if condition_mode == "omni":
                 train_script = PROJECT_ROOT / "scripts" / "train_zimage_omni.py"
                 state.add_log("训练模式: LoRA + Omni (SigLIP多图条件)", "info")
+            elif condition_mode == "img2img":
+                train_script = PROJECT_ROOT / "scripts" / "train_zimage_img2img.py"
+                state.add_log("训练模式: LoRA + Img2Img (图像转换)", "info")
             else:
+                # text2img (默认)
                 train_script = PROJECT_ROOT / "scripts" / "train_zimage_v2.py"
-                state.add_log(f"训练模式: LoRA + {condition_mode.upper()}", "info")
+                state.add_log(f"训练模式: LoRA + Text2Img", "info")
         elif training_type == "finetune":
-            # 全量微调
-            train_script = PROJECT_ROOT / "scripts" / "train_full_finetune.py"
-            state.add_log("训练模式: Finetune (全量微调，显存需求高)", "warning")
+            # 全量微调 - 支持三种条件模式
+            if condition_mode == "omni":
+                train_script = PROJECT_ROOT / "scripts" / "train_full_finetune_omni.py"
+                state.add_log("训练模式: Finetune + Omni (全量微调，显存需求高)", "warning")
+            elif condition_mode == "img2img":
+                train_script = PROJECT_ROOT / "scripts" / "train_full_finetune_img2img.py"
+                state.add_log("训练模式: Finetune + Img2Img (全量微调，显存需求高)", "warning")
+            else:
+                # text2img (默认)
+                train_script = PROJECT_ROOT / "scripts" / "train_full_finetune.py"
+                state.add_log("训练模式: Finetune + Text2Img (全量微调，显存需求高)", "warning")
         elif training_type == "controlnet":
-            # ControlNet训练
+            # ControlNet训练 (独立模式，不受 condition_mode 影响)
             train_script = PROJECT_ROOT / "scripts" / "train_controlnet.py"
-            state.add_log("训练模式: ControlNet", "info")
+            state.add_log("训练模式: ControlNet (独立控制网络)", "info")
         else:
-            # 默认使用LoRA
+            # 默认使用LoRA + Text2Img
             train_script = PROJECT_ROOT / "scripts" / "train_zimage_v2.py"
             state.add_log(f"未知训练类型 {training_type}，使用默认LoRA脚本", "warning")
         

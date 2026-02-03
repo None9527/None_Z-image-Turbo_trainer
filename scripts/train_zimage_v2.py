@@ -388,12 +388,9 @@ def main():
     
     logger.info("\n[1/7] 加载 Transformer...")
     
-    try:
-        from zimage_trainer.models.transformer_z_image import ZImageTransformer2DModel
-        logger.info("  ✓ 使用本地 ZImageTransformer2DModel")
-    except ImportError:
-        from diffusers import ZImageTransformer2DModel
-        logger.warning("  ⚠ 使用 diffusers 默认版本")
+    # 直接使用 diffusers 官方 ZImageTransformer2DModel
+    from diffusers import ZImageTransformer2DModel
+    logger.info("  ✓ 使用 diffusers ZImageTransformer2DModel")
     
     transformer = ZImageTransformer2DModel.from_pretrained(
         args.dit,
@@ -402,28 +399,25 @@ def main():
     )
     transformer = transformer.to(accelerator.device)
     
-    # Enable gradient checkpointing (BEFORE freeze)
-    if args.gradient_checkpointing:
-        transformer.enable_gradient_checkpointing()
-        logger.info("  [CKPT] Gradient checkpointing enabled")
+    # =========================================================================
+    # 2. 应用优化 (通过 Hook，无需修改模型源码)
+    # =========================================================================
+    from zimage_trainer.utils.model_hooks import apply_all_optimizations
+    
+    # 获取 attention backend 配置 (默认使用 flash)
+    attention_backend = getattr(args, 'attention_backend', 'flash')
+    
+    optimization_results = apply_all_optimizations(
+        transformer,
+        blocks_to_swap=args.blocks_to_swap,
+        attention_backend=attention_backend,
+        gradient_checkpointing=args.gradient_checkpointing,
+        device=accelerator.device,
+        verbose=True,
+    )
+    block_swapper = optimization_results.get("block_swapper")
     
     transformer.train()
-    
-    # =========================================================================
-    # 2. Block Swapper (真正的块交换)
-    # =========================================================================
-    block_swapper = None
-    if args.blocks_to_swap > 0:
-        from zimage_trainer.utils.block_swapper import create_block_swapper
-        logger.info(f"\n[SWAP] Initializing Block Swapper (blocks_to_swap={args.blocks_to_swap})...")
-        block_swapper = create_block_swapper(
-            blocks_to_swap=args.blocks_to_swap,
-            device=accelerator.device,
-            verbose=True,
-        )
-        # 设置块交换器到模型
-        transformer.set_block_swapper(block_swapper)
-        logger.info("  [OK] Block Swapper attached to transformer")
     
     # =========================================================================
     # 3. Apply LoRA with proper dtype
@@ -638,6 +632,14 @@ def main():
             logger.info("  🦁 Lion8bit 优化器 (显存最低)")
         except ImportError:
             logger.warning("  ⚠ bitsandbytes 未安装，使用标准 AdamW")
+            optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
+    elif args.optimizer_type == "AdamWFP8":
+        try:
+            from zimage_trainer.optimizers import AdamWFP8
+            optimizer = AdamWFP8(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
+            logger.info("  🔢 AdamWFP8 优化器 (FP8 E5M2 状态存储，精度优于 uint8)")
+        except (ImportError, RuntimeError) as e:
+            logger.warning(f"  ⚠ AdamWFP8 不可用 ({e})，使用标准 AdamW")
             optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
     else:  # AdamW
         optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)

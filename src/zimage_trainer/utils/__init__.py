@@ -31,6 +31,13 @@ from .xformers_utils import (
     get_optimal_attention_backend,
     benchmark_attention_backends,
 )
+from .model_hooks import (
+    BlockSwapperHook,
+    apply_block_swapper,
+    apply_attention_optimization,
+    enable_gradient_checkpointing,
+    apply_all_optimizations,
+)
 
 __all__ = [
     # VAE
@@ -67,4 +74,10 @@ __all__ = [
     "apply_xformers_to_transformer",
     "get_optimal_attention_backend",
     "benchmark_attention_backends",
+    # model hooks (diffusers 优化挂载)
+    "BlockSwapperHook",
+    "apply_block_swapper",
+    "apply_attention_optimization",
+    "enable_gradient_checkpointing",
+    "apply_all_optimizations",
 ]

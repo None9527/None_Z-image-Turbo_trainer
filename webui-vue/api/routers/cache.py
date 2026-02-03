@@ -33,6 +33,9 @@ class CacheGenerationRequest(BaseModel):
     resolution: int = 1024
     batchSize: int = 1
     maxSequenceLength: int = 512  # 文本编码器最大序列长度
+    # 配对模式支持
+    trainingMode: str = "text2img"  # text2img | img2img | omni | controlnet
+    generateSiglip: bool = False  # Omni 模式生成 SigLIP 特征
 
 # 存储待执行的 text cache 参数
 _pending_text_cache: dict = {}
@@ -110,7 +113,19 @@ async def generate_cache(request: CacheGenerationRequest):
     vae_path = str(get_model_path(model_type, "vae"))
     text_encoder_path = str(get_model_path(model_type, "text_encoder"))
     
-    state.add_log(f"模型类型: {model_type}, VAE: {vae_path}, Text Encoder: {text_encoder_path}", "info")
+    # 检测配对数据集结构
+    source_dir = dataset_path / "source"
+    target_dir = dataset_path / "target"
+    has_paired_structure = source_dir.exists() and target_dir.exists()
+    training_mode = request.trainingMode
+    
+    # 自动检测配对结构
+    if has_paired_structure and training_mode == "text2img":
+        training_mode = "img2img"
+        state.add_log("检测到 source/ + target/ 结构，自动切换到 Img2Img 模式", "info")
+    
+    state.add_log(f"模型类型: {model_type}, 训练模式: {training_mode}", "info")
+    state.add_log(f"VAE: {vae_path}, Text Encoder: {text_encoder_path}", "info")
     
     env = os.environ.copy()
     env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
@@ -130,32 +145,96 @@ async def generate_cache(request: CacheGenerationRequest):
         # 缓存脚本（使用独立脚本，避免触发 __init__.py 导致 CUDA 初始化问题）
         latent_script = str(PROJECT_ROOT / "scripts" / "cache_latents_standalone.py")
         
-        cmd_latent = [
-            sys.executable, latent_script,
-            "--vae", vae_path,  # 使用根据模型类型获取的路径
-            "--input_dir", str(dataset_path),
-            "--output_dir", str(dataset_path),
-            "--resolution", str(request.resolution),
-            "--batch_size", str(request.batchSize),
-            "--skip_existing"
-        ]
-        
-        state.cache_latent_process = subprocess.Popen(
-            cmd_latent,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            env=env,
-            text=True,
-            encoding='utf-8',
-            errors='replace',
-            bufsize=1,
-            creationflags=_get_subprocess_flags()
-        )
-        # 创建进程输出读取器
-        from routers.websocket import parse_cache_progress
-        state.start_process_reader(state.cache_latent_process, "cache_latent", parse_func=parse_cache_progress)
-        state.add_log(f"Latent cache started (PID: {state.cache_latent_process.pid})", "info")
-        started_tasks.append("latent")
+        # 配对模式：分别缓存 source 和 target 目录
+        if has_paired_structure and training_mode in ("img2img", "omni", "controlnet"):
+            # 先缓存 source 目录
+            cmd_source = [
+                sys.executable, latent_script,
+                "--vae", vae_path,
+                "--input_dir", str(source_dir),
+                "--output_dir", str(source_dir),
+                "--resolution", str(request.resolution),
+                "--batch_size", str(request.batchSize),
+                "--skip_existing"
+            ]
+            # 再缓存 target 目录
+            cmd_target = [
+                sys.executable, latent_script,
+                "--vae", vae_path,
+                "--input_dir", str(target_dir),
+                "--output_dir", str(target_dir),
+                "--resolution", str(request.resolution),
+                "--batch_size", str(request.batchSize),
+                "--skip_existing"
+            ]
+            
+            state.add_log(f"配对模式: 将分别缓存 source/ 和 target/ 目录", "info")
+            
+            # 启动 source 缓存（target 将在完成后启动）
+            state.cache_latent_process = subprocess.Popen(
+                cmd_source,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                env=env,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                bufsize=1,
+                creationflags=_get_subprocess_flags()
+            )
+            from routers.websocket import parse_cache_progress
+            state.start_process_reader(state.cache_latent_process, "cache_latent", parse_func=parse_cache_progress)
+            state.add_log(f"Source latent cache started (PID: {state.cache_latent_process.pid})", "info")
+            
+            # 后台等待 source 完成后启动 target
+            def _start_target_cache():
+                state.cache_latent_process.wait()
+                state.add_log("Source 缓存完成，开始 Target 缓存...", "info")
+                state.cache_latent_process = subprocess.Popen(
+                    cmd_target,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    bufsize=1,
+                    creationflags=_get_subprocess_flags()
+                )
+                state.start_process_reader(state.cache_latent_process, "cache_latent", parse_func=parse_cache_progress)
+                state.add_log(f"Target latent cache started (PID: {state.cache_latent_process.pid})", "info")
+            
+            thread = threading.Thread(target=_start_target_cache, daemon=True)
+            thread.start()
+            started_tasks.append("latent (source + target)")
+        else:
+            # 标准模式：缓存整个目录
+            cmd_latent = [
+                sys.executable, latent_script,
+                "--vae", vae_path,
+                "--input_dir", str(dataset_path),
+                "--output_dir", str(dataset_path),
+                "--resolution", str(request.resolution),
+                "--batch_size", str(request.batchSize),
+                "--skip_existing"
+            ]
+            
+            state.cache_latent_process = subprocess.Popen(
+                cmd_latent,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                env=env,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                bufsize=1,
+                creationflags=_get_subprocess_flags()
+            )
+            # 创建进程输出读取器
+            from routers.websocket import parse_cache_progress
+            state.start_process_reader(state.cache_latent_process, "cache_latent", parse_func=parse_cache_progress)
+            state.add_log(f"Latent cache started (PID: {state.cache_latent_process.pid})", "info")
+            started_tasks.append("latent")
     
     # Text Encoder Cache
     if request.generateText:
@@ -211,6 +290,56 @@ async def generate_cache(request: CacheGenerationRequest):
             state.start_process_reader(state.cache_text_process, "cache_text", parse_func=parse_cache_progress)
             state.add_log(f"Text cache started (PID: {state.cache_text_process.pid})", "info")
             started_tasks.append("text")
+    
+    # SigLIP Cache (Omni 模式专用)
+    if request.generateSiglip and training_mode == "omni":
+        conditions_dir = dataset_path / "conditions"
+        if conditions_dir.exists():
+            siglip_path = str(get_model_path(model_type, "siglip"))
+            if siglip_path and Path(siglip_path).exists():
+                siglip_script = str(PROJECT_ROOT / "src" / "zimage_trainer" / "cache_siglip.py")
+                
+                cmd_siglip = [
+                    sys.executable, "-m", "zimage_trainer.cache_siglip",
+                    "--siglip", siglip_path,
+                    "--input_dir", str(conditions_dir),
+                    "--output_dir", str(conditions_dir),
+                    "--skip_existing"
+                ]
+                
+                # SigLIP 缓存在 text 之后顺序执行（显存限制）
+                def _start_siglip_after_all():
+                    # 等待所有前置任务完成
+                    if state.cache_latent_process:
+                        state.cache_latent_process.wait()
+                    if state.cache_text_process:
+                        state.cache_text_process.wait()
+                    
+                    state.add_log("开始 SigLIP 特征缓存...", "info")
+                    siglip_proc = subprocess.Popen(
+                        cmd_siglip,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        env=env,
+                        text=True,
+                        encoding='utf-8',
+                        errors='replace',
+                        bufsize=1,
+                        cwd=str(PROJECT_ROOT),
+                        creationflags=_get_subprocess_flags()
+                    )
+                    state.add_log(f"SigLIP cache started (PID: {siglip_proc.pid})", "info")
+                    siglip_proc.wait()
+                    state.add_log("SigLIP 缓存完成", "info")
+                
+                thread = threading.Thread(target=_start_siglip_after_all, daemon=True)
+                thread.start()
+                started_tasks.append("siglip (queued)")
+                state.add_log("SigLIP cache 已排队，将在其他缓存完成后开始", "info")
+            else:
+                state.add_log("未找到 SigLIP 模型，跳过 SigLIP 缓存", "warning")
+        else:
+            state.add_log("未找到 conditions/ 目录，跳过 SigLIP 缓存", "warning")
     
     if not started_tasks:
         raise HTTPException(status_code=400, detail="No cache type selected")

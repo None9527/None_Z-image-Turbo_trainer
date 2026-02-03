@@ -205,7 +205,17 @@
     </div>
 
     <!-- 图片网格 -->
-    <div class="image-grid-container" v-if="pagination?.totalCount > 0 || datasetStore.currentImages.length > 0">
+    <div class="image-grid-container" v-if="hasContent">
+      <!-- 数据集类型指示器 -->
+      <div class="dataset-type-badge" v-if="datasetStore.isPairedMode">
+        <el-tag :type="datasetStore.isOmniMode ? 'warning' : 'primary'" effect="dark">
+          {{ datasetStore.isOmniMode ? 'Omni 多图模式' : 'Img2Img 配对模式' }}
+        </el-tag>
+        <span class="type-hint">
+          检测到 {{ datasetStore.currentDataset?.subdirectories?.join(' + ') }} 子目录
+        </span>
+      </div>
+      
       <!-- 分页控制 - 顶部 -->
       <div class="pagination-top">
         <el-pagination
@@ -220,7 +230,32 @@
         />
       </div>
       
-      <div class="image-grid">
+      <!-- Omni 多图模式 -->
+      <div class="image-grid paired-grid" v-if="datasetStore.isOmniMode">
+        <OmniImageCard
+          v-for="pair in paginatedPairs"
+          :key="pair.id"
+          :pair="pair"
+          :selected="datasetStore.selectedImages.has(pair.target.path)"
+          @click="previewPair(pair)"
+          @toggle-select="toggleSelection({ path: $event } as DatasetImage)"
+        />
+      </div>
+      
+      <!-- 配对模式 (Img2Img / ControlNet) -->
+      <div class="image-grid paired-grid" v-else-if="datasetStore.isPairedMode">
+        <PairedImageCard
+          v-for="pair in paginatedPairs"
+          :key="pair.id"
+          :pair="pair"
+          :selected="datasetStore.selectedImages.has(pair.target.path)"
+          @click="previewPair(pair)"
+          @toggle-select="toggleSelection({ path: $event } as DatasetImage)"
+        />
+      </div>
+      
+      <!-- 标准模式 -->
+      <div class="image-grid" v-else>
       <div 
         class="image-card glass-card"
         v-for="image in paginatedImages"
@@ -799,12 +834,15 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useDatasetStore, type DatasetImage, type LocalDataset } from '@/stores/dataset'
+import { useDatasetStore, type DatasetImage, type LocalDataset, type ImagePair } from '@/stores/dataset'
 import { useTrainingStore } from '@/stores/training'
 import { useWebSocketStore } from '@/stores/websocket'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, InfoFilled, WarningFilled, MagicStick, ScaleToOriginal, Loading, Clock, Grid } from '@element-plus/icons-vue'
 import axios from 'axios'
+
+// 配对图片卡片组件
+import { PairedImageCard, OmniImageCard } from './dataset/components'
 
 const datasetStore = useDatasetStore()
 const trainingStore = useTrainingStore()
@@ -927,6 +965,23 @@ watch(
 
 // 直接使用 store 的 currentImages（已经是当前页数据）
 const paginatedImages = computed(() => datasetStore.currentImages)
+
+// 配对数据集支持
+const paginatedPairs = computed(() => datasetStore.currentPairs)
+const hasContent = computed(() => {
+  if (datasetStore.isPairedMode) {
+    return datasetStore.currentPairs.length > 0
+  }
+  return pagination.value?.totalCount ? pagination.value.totalCount > 0 : datasetStore.currentImages.length > 0
+})
+
+// 预览配对图片
+function previewPair(pair: ImagePair) {
+  // 默认预览目标图，但保存配对信息以便在对话框中切换
+  editingImage.value = pair.target
+  editingCaption.value = pair.target.caption || ''
+  previewDialogVisible.value = true
+}
 
 
 // 分页事件处理（请求后端加载对应页）
@@ -2145,6 +2200,27 @@ function formatSize(bytes: number): string {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--space-md);
+}
+
+// 配对模式网格（更宽的卡片）
+.paired-grid {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+// 数据集类型标签
+.dataset-type-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-md);
+  
+  .type-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
 }
 
 .image-card {
