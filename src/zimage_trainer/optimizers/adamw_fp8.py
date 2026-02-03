@@ -127,33 +127,26 @@ class AdamWFP8(Optimizer):
                 amsgrad = group['amsgrad']
                 state = self.state[p]
                 
-                # State initialization - store in fp32 initially, FP8 after first step
+                # State initialization - directly in FP8 (zeros are exactly representable)
                 if len(state) == 0:
                     state['step'] = 0
-                    # Start with fp32 zeros, will convert to FP8 after first update
-                    state['exp_avg'] = torch.zeros_like(p, dtype=torch.float32)
-                    state['exp_avg_sq'] = torch.zeros_like(p, dtype=torch.float32)
+                    # FP8 zeros - no precision loss, saves memory from start
+                    state['exp_avg'] = torch.zeros_like(p, dtype=self._fp8_dtype_m)
+                    state['exp_avg_sq'] = torch.zeros_like(p, dtype=self._fp8_dtype_v)
                     state['scale_m'] = torch.tensor(1.0, device=p.device)
                     state['scale_v'] = torch.tensor(1.0, device=p.device)
-                    state['is_fp8'] = False
                     if amsgrad:
-                        state['max_exp_avg_sq'] = torch.zeros_like(p, dtype=torch.float32)
+                        state['max_exp_avg_sq'] = torch.zeros_like(p, dtype=self._fp8_dtype_v)
                         state['scale_max_v'] = torch.tensor(1.0, device=p.device)
                 
                 state['step'] += 1
                 step = state['step']
                 
                 # Upcast FP8 states to fp32 for computation
-                if state['is_fp8']:
-                    exp_avg = self._from_fp8_scaled(state['exp_avg'], state['scale_m'], torch.float32)
-                    exp_avg_sq = self._from_fp8_scaled(state['exp_avg_sq'], state['scale_v'], torch.float32)
-                    if amsgrad:
-                        max_exp_avg_sq = self._from_fp8_scaled(state['max_exp_avg_sq'], state['scale_max_v'], torch.float32)
-                else:
-                    exp_avg = state['exp_avg']
-                    exp_avg_sq = state['exp_avg_sq']
-                    if amsgrad:
-                        max_exp_avg_sq = state['max_exp_avg_sq']
+                exp_avg = self._from_fp8_scaled(state['exp_avg'], state['scale_m'], torch.float32)
+                exp_avg_sq = self._from_fp8_scaled(state['exp_avg_sq'], state['scale_v'], torch.float32)
+                if amsgrad:
+                    max_exp_avg_sq = self._from_fp8_scaled(state['max_exp_avg_sq'], state['scale_max_v'], torch.float32)
                 
                 # Bias correction
                 bias_correction1 = 1 - beta1 ** step
@@ -189,7 +182,7 @@ class AdamWFP8(Optimizer):
                 state['exp_avg_sq'], state['scale_v'] = self._to_fp8_scaled(exp_avg_sq, self._fp8_dtype_v)
                 if amsgrad:
                     state['max_exp_avg_sq'], state['scale_max_v'] = self._to_fp8_scaled(max_exp_avg_sq, self._fp8_dtype_v)
-                state['is_fp8'] = True
+
         
         return loss
     
@@ -199,14 +192,12 @@ class AdamWFP8(Optimizer):
         
         # Convert FP8 states to fp32 for compatibility
         for param_id, param_state in state_dict['state'].items():
-            if param_state.get('is_fp8', False):
-                for key, scale_key in [('exp_avg', 'scale_m'), ('exp_avg_sq', 'scale_v'), ('max_exp_avg_sq', 'scale_max_v')]:
-                    if key in param_state:
-                        scale = param_state.get(scale_key, torch.tensor(1.0))
-                        param_state[key] = param_state[key].to(torch.float32) * scale
-                        if scale_key in param_state:
-                            del param_state[scale_key]
-                param_state['is_fp8'] = False
+            for key, scale_key in [('exp_avg', 'scale_m'), ('exp_avg_sq', 'scale_v'), ('max_exp_avg_sq', 'scale_max_v')]:
+                if key in param_state:
+                    scale = param_state.get(scale_key, torch.tensor(1.0))
+                    param_state[key] = param_state[key].to(torch.float32) * scale
+                    if scale_key in param_state:
+                        del param_state[scale_key]
         
         return state_dict
     
