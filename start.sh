@@ -73,7 +73,8 @@ export TRAINER_PORT=${TRAINER_PORT:-$DEFAULT_PORT}
 export TRAINER_HOST=${TRAINER_HOST:-$DEFAULT_HOST}
 export MODEL_PATH=${MODEL_PATH:-"$SCRIPT_DIR/models"}
 export DATASET_PATH=${DATASET_PATH:-"$SCRIPT_DIR/datasets"}
-export LORA_PATH=${LORA_PATH:-"$SCRIPT_DIR/output"}
+export OUTPUT_PATH=${OUTPUT_PATH:-"$SCRIPT_DIR/output"}
+export LORA_PATH=${LORA_PATH:-"$OUTPUT_PATH/lora"}
 export OLLAMA_HOST=${OLLAMA_HOST:-"http://127.0.0.1:11434"}
 export OLLAMA_MODEL=${OLLAMA_MODEL:-"llama3.2-vision"}
 
@@ -182,7 +183,7 @@ get_local_ip() {
 LOCAL_IP=$(get_local_ip)
 
 # 启动 TensorBoard
-LOG_DIR="$LORA_PATH/logs"
+LOG_DIR="$OUTPUT_PATH/logs"
 mkdir -p "$LOG_DIR"
 echo -e "${GREEN}启动 TensorBoard...${NC}"
 # 检查端口是否被占用 (简单检查)
