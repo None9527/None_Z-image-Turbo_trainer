@@ -68,18 +68,17 @@ if [ -f "$SCRIPT_DIR/.env" ]; then
     set +a
 fi
 
-# 应用默认值
+# 应用默认值（简化：只保留 OUTPUT_PATH）
 export TRAINER_PORT=${TRAINER_PORT:-$DEFAULT_PORT}
 export TRAINER_HOST=${TRAINER_HOST:-$DEFAULT_HOST}
 export MODEL_PATH=${MODEL_PATH:-"$SCRIPT_DIR/models"}
 export DATASET_PATH=${DATASET_PATH:-"$SCRIPT_DIR/datasets"}
 export OUTPUT_PATH=${OUTPUT_PATH:-"$SCRIPT_DIR/output"}
-export LORA_PATH=${LORA_PATH:-"$OUTPUT_PATH/lora"}
 export OLLAMA_HOST=${OLLAMA_HOST:-"http://127.0.0.1:11434"}
 export OLLAMA_MODEL=${OLLAMA_MODEL:-"llama3.2-vision"}
 
 # 确保必要目录存在
-mkdir -p "$DATASET_PATH" "$LORA_PATH" logs
+mkdir -p "$DATASET_PATH" "$OUTPUT_PATH/logs"
 
 # 激活虚拟环境
 VENV_DIR="$SCRIPT_DIR/venv"
@@ -111,7 +110,7 @@ echo -e "  端口:       ${YELLOW}$TRAINER_PORT${NC}"
 echo -e "  监听:       ${YELLOW}$TRAINER_HOST${NC}"
 echo -e "  模型路径:   ${YELLOW}$MODEL_PATH${NC}"
 echo -e "  数据集:     ${YELLOW}$DATASET_PATH${NC}"
-echo -e "  LoRA输出:   ${YELLOW}$LORA_PATH${NC}"
+echo -e "  输出路径:   ${YELLOW}$OUTPUT_PATH${NC}"
 echo -e "  Ollama:     ${YELLOW}$OLLAMA_HOST${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
@@ -139,17 +138,13 @@ DIST_DIR="$SCRIPT_DIR/webui-vue/dist"
 SRC_DIR="$SCRIPT_DIR/webui-vue/src"
 
 check_frontend_build() {
-    # 如果 dist 不存在，需要构建
     if [ ! -d "$DIST_DIR" ]; then
         return 0
     fi
-    
-    # 检查 src 目录是否比 dist 新
     NEWEST_SRC=$(find "$SRC_DIR" -type f \( -name "*.vue" -o -name "*.ts" -o -name "*.tsx" \) -newer "$DIST_DIR/index.html" 2>/dev/null | head -1)
     if [ -n "$NEWEST_SRC" ]; then
         return 0
     fi
-    
     return 1
 }
 
@@ -169,10 +164,8 @@ echo ""
 
 # 获取本机 IP
 get_local_ip() {
-    # Linux
     if command -v hostname &> /dev/null; then
         hostname -I 2>/dev/null | awk '{print $1}'
-    # macOS
     elif command -v ipconfig &> /dev/null; then
         ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null
     else
@@ -186,8 +179,8 @@ LOCAL_IP=$(get_local_ip)
 LOG_DIR="$OUTPUT_PATH/logs"
 mkdir -p "$LOG_DIR"
 echo -e "${GREEN}启动 TensorBoard...${NC}"
-# 检查端口是否被占用 (简单检查)
-if lsof -Pi :6006 -sTCP:LISTEN -t >/dev/null ; then
+echo -e "  日志目录: ${YELLOW}$LOG_DIR${NC}"
+if lsof -Pi :6006 -sTCP:LISTEN -t >/dev/null 2>&1; then
     echo -e "  端口 6006 被占用，跳过启动 TensorBoard"
 else
     tensorboard --logdir "$LOG_DIR" --port 6006 --host 0.0.0.0 > /dev/null 2>&1 &
@@ -235,4 +228,3 @@ else
         --port "$TRAINER_PORT" \
         --log-level warning
 fi
-
