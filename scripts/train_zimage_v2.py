@@ -332,13 +332,28 @@ def main():
     global _interrupted
     args = parse_args()
     
+    # ===== 路径诊断 =====
+    print("=" * 60)
+    print("[PATH DEBUG] 输出路径诊断")
+    print("=" * 60)
+    print(f"[PATH DEBUG] args.output_dir (原始) = {args.output_dir}")
+    print(f"[PATH DEBUG] os.path.isabs(args.output_dir) = {os.path.isabs(args.output_dir)}")
+    print(f"[PATH DEBUG] OUTPUT_PATH (env) = {os.environ.get('OUTPUT_PATH', '<未设置>')}")
+    
     # 解析 output_dir：如果是相对路径（如 "lora"），则基于 OUTPUT_PATH 环境变量
     output_base = os.environ.get("OUTPUT_PATH", "")
     if output_base and not os.path.isabs(args.output_dir):
         args.output_dir = os.path.join(output_base, args.output_dir)
+        print(f"[PATH DEBUG] 使用 OUTPUT_PATH 拼接后 = {args.output_dir}")
+    else:
+        print(f"[PATH DEBUG] 保持原始路径 (绝对路径或 OUTPUT_PATH 未设置)")
+    
+    print(f"[PATH DEBUG] 最终 output_dir = {args.output_dir}")
+    print("=" * 60)
     
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
+    print(f"[PATH DEBUG] 目录创建成功: {args.output_dir}")
     
     # Initialize Accelerator
     accelerator = Accelerator(
