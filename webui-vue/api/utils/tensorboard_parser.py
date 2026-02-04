@@ -25,8 +25,22 @@ def list_training_runs(logs_base_dir: Path) -> List[Dict[str, Any]]:
     """
     runs = []
     
+    # 诊断日志
+    print(f"[TensorBoard] 扫描日志目录: {logs_base_dir}")
+    print(f"[TensorBoard] 目录存在: {logs_base_dir.exists()}")
+    
     if not logs_base_dir.exists():
+        print(f"[TensorBoard] 目录不存在，返回空列表")
         return runs
+    
+    # 列出所有内容用于诊断
+    try:
+        all_items = list(logs_base_dir.iterdir())
+        print(f"[TensorBoard] 子目录/文件数量: {len(all_items)}")
+        for item in all_items[:10]:  # 只打印前 10 个
+            print(f"[TensorBoard]   - {item.name} (is_dir={item.is_dir()})")
+    except Exception as e:
+        print(f"[TensorBoard] 列出目录失败: {e}")
     
     # 扫描所有子目录
     for run_dir in logs_base_dir.iterdir():
@@ -35,6 +49,8 @@ def list_training_runs(logs_base_dir: Path) -> List[Dict[str, Any]]:
         
         # 查找 event 文件
         event_files = list(run_dir.glob("events.out.tfevents.*"))
+        print(f"[TensorBoard] {run_dir.name}: 找到 {len(event_files)} 个 event 文件")
+        
         if not event_files:
             continue
         
@@ -51,6 +67,7 @@ def list_training_runs(logs_base_dir: Path) -> List[Dict[str, Any]]:
     
     # 按开始时间倒序排列（最新在前）
     runs.sort(key=lambda x: x["start_time"], reverse=True)
+    print(f"[TensorBoard] 共找到 {len(runs)} 个有效训练记录")
     return runs
 
 
