@@ -19,13 +19,26 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: 拉取最新代码
+:: 拉取最新代码（强制覆盖本地更改）
 echo [1/3] Pulling latest code from repository...
 echo.
-git pull
+git fetch origin
 if errorlevel 1 (
     echo.
-    echo [ERROR] Git pull failed! Please check your network or repository status.
+    echo [ERROR] Git fetch failed! Please check your network or repository status.
+    pause
+    exit /b 1
+)
+
+:: 检测当前分支
+for /f "tokens=*" %%i in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set CURRENT_BRANCH=%%i
+if "%CURRENT_BRANCH%"=="" set CURRENT_BRANCH=main
+
+echo Resetting to origin/%CURRENT_BRANCH%...
+git reset --hard origin/%CURRENT_BRANCH%
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Git reset failed!
     pause
     exit /b 1
 )
