@@ -30,12 +30,9 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: 检测当前分支
-for /f "tokens=*" %%i in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set CURRENT_BRANCH=%%i
-if "%CURRENT_BRANCH%"=="" set CURRENT_BRANCH=main
-
-echo Resetting to origin/%CURRENT_BRANCH%...
-git reset --hard origin/%CURRENT_BRANCH%
+:: 强制重置到 origin/main
+echo Resetting to origin/main...
+git reset --hard origin/main
 if errorlevel 1 (
     echo.
     echo [ERROR] Git reset failed!
