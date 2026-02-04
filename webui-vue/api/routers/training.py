@@ -492,6 +492,10 @@ async def start_training(config: Dict[str, Any]):
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         
+        # 确保 OUTPUT_PATH 环境变量被传递（用于训练脚本解析 output_dir）
+        env["OUTPUT_PATH"] = str(OUTPUT_BASE_DIR)
+        state.add_log(f"OUTPUT_PATH={OUTPUT_BASE_DIR}", "info")
+        
         # 设置 GPU ID
         if gpu_ids:
             env["CUDA_VISIBLE_DEVICES"] = gpu_ids
