@@ -27,7 +27,6 @@ MODEL_SCHEMAS = {
     "zimage": {
         "rules": [
             {"type": "file", "path": "model_index.json", "min_size": 10},
-            {"type": "alternative", "paths": ["config.json", "configuration.json"], "name": "config", "required": False},  # 根目录 config 可选
             # 权重文件校验 (防止仅分发 json)
             # Transformer (分片 -> 检查 index)
             {"type": "file", "path": "transformer/diffusion_pytorch_model.safetensors.index.json", "min_size": 10},
