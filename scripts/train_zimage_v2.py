@@ -686,9 +686,12 @@ def main():
     writer = None
     if accelerator.is_main_process:
         from torch.utils.tensorboard import SummaryWriter
-        # 日志统一写到 output_dir 的父目录下的 logs 目录（避免被训练类型子目录影响）
-        output_parent = os.path.dirname(args.output_dir)  # output/lora -> output
-        logging_dir = os.path.join(output_parent, "logs", args.output_name)
+        # 日志统一写到 OUTPUT_PATH/logs 目录（优先使用环境变量，避免路径计算错误）
+        output_base = os.environ.get("OUTPUT_PATH", "")
+        if not output_base:
+            # 回退：使用 output_dir 的父目录
+            output_base = os.path.dirname(args.output_dir)
+        logging_dir = os.path.join(output_base, "logs", args.output_name)
         os.makedirs(logging_dir, exist_ok=True)
         writer = SummaryWriter(log_dir=logging_dir)
         logger.info(f"TensorBoard log directory: {logging_dir}")

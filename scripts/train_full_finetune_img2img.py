@@ -424,8 +424,10 @@ def main():
     
     writer = None
     if accelerator.is_main_process:
-        output_parent = os.path.dirname(args.output_dir)
-        logging_dir = os.path.join(output_parent, "logs", args.output_name)
+        output_base = os.environ.get("OUTPUT_PATH", "")
+        if not output_base:
+            output_base = os.path.dirname(args.output_dir)
+        logging_dir = os.path.join(output_base, "logs", args.output_name)
         os.makedirs(logging_dir, exist_ok=True)
         writer = SummaryWriter(log_dir=logging_dir)
     
