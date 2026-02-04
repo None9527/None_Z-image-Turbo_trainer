@@ -152,6 +152,9 @@ def parse_args():
     # Memory optimization
     parser.add_argument("--blocks_to_swap", type=int, default=0)
     parser.add_argument("--block_swap_enabled", type=bool, default=False)
+    parser.add_argument("--attention_backend", type=str, default="flash",
+        choices=["flash", "xformers", "sdpa", "math"],
+        help="Attention backend (默认flash，如果显卡不支持会自动降级为sdpa)")
     
     # Turbo / RAFT mode
     parser.add_argument("--enable_turbo", type=bool, default=True)
@@ -404,8 +407,19 @@ def main():
     # =========================================================================
     from zimage_trainer.utils.model_hooks import apply_all_optimizations
     
-    # 获取 attention backend 配置 (默认使用 flash)
+    # 获取 attention backend 配置 (默认优先使用 flash)
     attention_backend = getattr(args, 'attention_backend', 'flash')
+
+    # 智能降级检测: 如果指定了 flash 但显卡不支持 (Compute Capability < 8.0)，自动降级为 sdpa
+    if attention_backend == 'flash' and torch.cuda.is_available():
+        try:
+            major, _ = torch.cuda.get_device_capability()
+            if major < 8:
+                logger.warning(f"⚠️ 检测到 GPU 架构 (Compute {major}.x) 不支持 FlashAttention (需 Ampere/Compute 8.0+)。")
+                logger.warning("   🔄 自动降级为 'sdpa' (Scaled Dot Product Attention) 以保证正常运行。")
+                attention_backend = 'sdpa'
+        except Exception as e:
+            logger.warning(f"⚠️ 无法检测 GPU 架构，保持默认设置: {e}")
     
     optimization_results = apply_all_optimizations(
         transformer,

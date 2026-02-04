@@ -1,61 +1,80 @@
-# LongCat-Image 训练配置 (自动生成)
-# 生成时间: 2025-12-10T13:33:41.636408
-# 模型类型: longcat
+# Z-Image 训练配置 (自动生成)
+# 生成时间: 2026-02-04T21:14:53.437160
 
-[model]
-model_type = "longcat"
-dit = "D:/AI/None_Z-image-Turbo_trainer/longcat_models/transformer"
-output_dir = "D:/AI/None_Z-image-Turbo_trainer/output"
+[general]
+model_type = "zimage"
+training_type = "lora"
+condition_mode = "text2img"
+dit = "D:/AI/Z-Image/transformer"
+output_dir = "D:/AI/None_Z-image-Turbo_trainer/model-output/lora"
 
 [acrf]
-enable_turbo = true
-turbo_steps = 8
+enable_turbo = false
+turbo_steps = 10
 shift = 3
-jitter_scale = 0.02
-snr_gamma = 5
-snr_floor = 0.1
+jitter_scale = 0
+snr_gamma = 0
+snr_floor = 0
 use_anchor = true
 use_dynamic_shifting = true
 base_shift = 0.5
 max_shift = 1.15
 raft_mode = true
 free_stream_ratio = 0.3
-latent_jitter_scale = 0.01
+l2_schedule_mode = "constant"
+l2_initial_ratio = 1
+l2_final_ratio = 0.3
+l2_milestones = ""
+l2_include_anchor = false
+l2_anchor_ratio = 0.3
+latent_jitter_scale = 0
+enable_timestep_aware_loss = false
+timestep_high_threshold = 0.7
+timestep_low_threshold = 0.3
+enable_curvature = false
+lambda_curvature = 0.05
+curvature_interval = 10
+curvature_start_epoch = 0
+cfg_training = false
+cfg_scale = 7
+cfg_training_ratio = 0.3
 
 [lora]
-network_dim = 32
-network_alpha = 16
+network_dim = 64
+network_alpha = 32
+train_adaln = false
+train_norm = false
+train_single_stream = false
 
 [training]
-output_name = "zimage-lora"
+output_name = "z-lora1"
 optimizer_type = "AdamW8bit"
-learning_rate = 0.001
-weight_decay = 0
-lr_scheduler = "cosine_with_restarts"
-lr_warmup_steps = 140
+adafactor_relative_step = true
+learning_rate = 5e-05
+weight_decay = 0.001
+lr_scheduler = "constant_with_warmup"
+lr_warmup_steps = 200
 lr_num_cycles = 1
-lambda_l1 = 1
-lambda_cosine = 0.05
-enable_freq = true
+lambda_l1 = 0
+lambda_cosine = 0
+enable_freq = false
 lambda_freq = 0.3
 alpha_hf = 1
-beta_lf = 0.2
-enable_style = true
-lambda_style = 0.3
-lambda_struct = 1
+beta_lf = 0.3
+enable_style = false
+lambda_style = 0.2
 lambda_light = 0.5
 lambda_color = 0.3
-lambda_tex = 0.5
 num_train_epochs = 20
-save_every_n_epochs = 1
-gradient_accumulation_steps = 2
+gradient_accumulation_steps = 1
 mixed_precision = "bf16"
 seed = 42
 
 [advanced]
-max_grad_norm = 5.5
+save_every_n_epochs = 1
+max_grad_norm = 1
 gradient_checkpointing = true
-blocks_to_swap = 8
+blocks_to_swap = 0
 
 [optimization]
 auto_optimize = true
@@ -65,8 +84,9 @@ auto_optimize = true
 batch_size = 1
 shuffle = true
 enable_bucket = true
+drop_text_ratio = 0
 
 [[dataset.sources]]
 cache_directory = "D:/AI/None_Z-image-Turbo_trainer/datasets/1"
-num_repeats = 100
+num_repeats = 29
 resolution_limit = 1024

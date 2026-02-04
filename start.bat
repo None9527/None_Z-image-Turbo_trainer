@@ -182,6 +182,12 @@ cd /d "%SCRIPT_DIR%webui-vue\api"
 :: Open browser after 2 seconds (background)
 start /b cmd /c "timeout /t 2 /nobreak >nul && start http://localhost:%TRAINER_PORT%"
 
+:: Start TensorBoard (background)
+echo Starting TensorBoard...
+start /b "" "%PYTHON_EXE%" -m tensorboard.main --logdir "%OUTPUT_PATH%\logs" --port 6006 --host %TRAINER_HOST% >nul 2>&1
+echo    TensorBoard: http://localhost:6006
+echo.
+
 :: Start server
 if "%DEV_MODE%"=="1" (
     echo [Dev Mode] Hot reload enabled

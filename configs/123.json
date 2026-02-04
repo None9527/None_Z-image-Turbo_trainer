@@ -54,12 +54,12 @@
     "conditioning_scale": 0.75
   },
   "optimizer": {
-    "type": "AdamWFP8",
+    "type": "AdamW8bit",
     "learning_rate": "1e-4",
     "relative_step": true
   },
   "training": {
-    "output_name": "z-lora",
+    "output_name": "z-lora1",
     "learning_rate": 5e-05,
     "learning_rate_str": "5e-5",
     "weight_decay": 0.001,
@@ -83,7 +83,13 @@
     "shuffle": true,
     "enable_bucket": true,
     "drop_text_ratio": 0,
-    "datasets": []
+    "datasets": [
+      {
+        "cache_directory": "D:\\AI\\None_Z-image-Turbo_trainer\\datasets\\1",
+        "num_repeats": 29,
+        "resolution_limit": 1024
+      }
+    ]
   },
   "reg_dataset": {
     "enabled": false,
@@ -105,5 +111,5 @@
   },
   "model_type": "zimage",
   "created": "2026-01-13T18:58:55.740025",
-  "modified": "2026-02-03T22:19:58.199314"
+  "modified": "2026-02-04T21:09:10.032425"
 }

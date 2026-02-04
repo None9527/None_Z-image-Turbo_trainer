@@ -334,7 +334,7 @@ async def scan_dataset(request: DatasetScanRequest):
                     total_size += cond.get("size", 0)
             
             return {
-                "path": str(path),
+                "path": path.as_posix(),
                 "name": path.name,
                 "datasetType": dataset_type,
                 "subdirectories": subdirs,
@@ -379,7 +379,7 @@ async def scan_dataset(request: DatasetScanRequest):
                 _save_dimension_cache(path, dim_cache)
             
             return {
-                "path": str(path),
+                "path": path.as_posix(),
                 "name": path.name,
                 "datasetType": "standard",
                 "subdirectories": [],
@@ -512,7 +512,7 @@ async def create_dataset(name: str = Form(...)):
         dataset_path.mkdir(parents=True, exist_ok=True)
         # 清除父目录缓存（新建数据集后列表需要更新）
         _invalidate_dataset_cache(DATASETS_DIR)
-        return {"success": True, "path": str(dataset_path), "name": safe_name}
+        return {"success": True, "path": dataset_path.as_posix(), "name": safe_name}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create dataset: {str(e)}")
 
@@ -617,7 +617,7 @@ async def upload_files(
     return {
         "success": True,
         "uploaded": uploaded,
-        "datasetPath": str(dataset_path),
+        "datasetPath": dataset_path.as_posix(),
         "errors": errors
     }
 
@@ -729,7 +729,7 @@ async def list_cached_datasets():
                             
                             datasets.append({
                                 "name": f"{name} ({file_count} {status})",
-                                "path": str(item.absolute()),
+                                "path": item.absolute().as_posix(),
                                 "files": file_count,
                                 "cached": cache_count > 0
                             })
