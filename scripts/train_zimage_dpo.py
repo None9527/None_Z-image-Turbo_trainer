@@ -222,6 +222,11 @@ def main():
     global _interrupted
     args = parse_args()
     
+    # 解析 output_dir：如果是相对路径，基于 OUTPUT_PATH 环境变量
+    output_base = os.environ.get("OUTPUT_PATH", "")
+    if output_base and not os.path.isabs(args.output_dir):
+        args.output_dir = os.path.join(output_base, args.output_dir)
+    
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
     

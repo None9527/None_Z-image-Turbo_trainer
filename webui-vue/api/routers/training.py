@@ -562,8 +562,8 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         f'training_type = "{config.get("training_type", "lora")}"',
         f'condition_mode = "{config.get("condition_mode", "text2img")}"',
         f'dit = "{str(get_model_path(model_type, "transformer")).replace(chr(92), "/")}"',
-        # 根据 training_type 动态设置输出目录
-        f'output_dir = "{str(FINETUNE_PATH if training_type == "finetune" else (CONTROLNET_PATH if training_type == "controlnet" else LORA_PATH)).replace(chr(92), "/")}"',
+        # 根据 training_type 设置输出子目录（相对于 OUTPUT_PATH 环境变量）
+        f'output_dir = "{training_type if training_type in ["lora", "finetune", "controlnet"] else "lora"}"',
         "",
         "[acrf]",
         f"enable_turbo = {'false' if training_type == 'controlnet' else ('true' if config.get('acrf', {}).get('enable_turbo', True) else 'false')}",
