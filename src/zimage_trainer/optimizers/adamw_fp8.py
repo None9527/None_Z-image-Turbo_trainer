@@ -67,8 +67,8 @@ class AdamWFP8(Optimizer):
         
         # Check FP8 support - use e4m3fn for better precision
         self._check_fp8_support()
-        self._fp8_dtype_m = torch.float8_e5m2      # momentum: larger range
-        self._fp8_dtype_v = torch.float8_e4m3fn    # variance: more precision
+        self._fp8_dtype_m = torch.float8_e4m3fn   # momentum: larger range
+        self._fp8_dtype_v = torch.float8_e5m2     # variance: more precision
     
     def _check_fp8_support(self):
         """Verify PyTorch FP8 support is available."""
