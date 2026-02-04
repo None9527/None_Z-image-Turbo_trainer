@@ -19,13 +19,26 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: 拉取最新代码
+:: 拉取最新代码（强制覆盖本地更改）
 echo [1/3] Pulling latest code from repository...
 echo.
-git pull
+git fetch origin
 if errorlevel 1 (
     echo.
-    echo [ERROR] Git pull failed! Please check your network or repository status.
+    echo [ERROR] Git fetch failed! Please check your network or repository status.
+    pause
+    exit /b 1
+)
+
+:: 检测当前分支
+for /f "tokens=*" %%i in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set CURRENT_BRANCH=%%i
+if "%CURRENT_BRANCH%"=="" set CURRENT_BRANCH=main
+
+echo Resetting to origin/%CURRENT_BRANCH%...
+git reset --hard origin/%CURRENT_BRANCH%
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Git reset failed!
     pause
     exit /b 1
 )
@@ -35,9 +48,20 @@ echo [2/3] Installing frontend dependencies...
 echo.
 
 :: 检查嵌入式 Node.js
-if exist "node\node.exe" (
-    set "NODE_PATH=%~dp0node"
-    set "NPM_CMD=!NODE_PATH!\node.exe !NODE_PATH!\node_modules\npm\bin\npm-cli.js"
+set "SCRIPT_DIR=%~dp0"
+:: 移除末尾反斜杠
+if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+
+if exist "%SCRIPT_DIR%\node\node.exe" (
+    set "NODE_EXE=%SCRIPT_DIR%\node\node.exe"
+    set "NPM_CLI=%SCRIPT_DIR%\node\node_modules\npm\bin\npm-cli.js"
+    if exist "!NPM_CLI!" (
+        set "NPM_CMD=!NODE_EXE! !NPM_CLI!"
+        echo Using embedded Node.js: !NODE_EXE!
+    ) else (
+        echo [WARN] Embedded npm not found, using system npm...
+        set "NPM_CMD=npm"
+    )
 ) else (
     echo [WARN] Embedded Node.js not found, using system Node.js...
     set "NPM_CMD=npm"

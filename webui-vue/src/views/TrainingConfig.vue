@@ -1453,7 +1453,13 @@ async function loadConfig(configName: string) {
     config.value.training.learning_rate_str = lr >= 0.001 ? lr.toString() : lr.toExponential()
     currentConfigName.value = configName
   } catch (e: any) {
-    ElMessage.error('加载配置失败: ' + (e.response?.data?.detail || e.message))
+    console.error('Failed to load config:', configName, e)
+    // 加载失败时回退到默认配置
+    if (configName !== 'default') {
+      ElMessage.warning(`配置 "${configName}" 加载失败，使用默认配置`)
+    }
+    config.value = getDefaultConfig()
+    currentConfigName.value = 'default'
   } finally {
     loading.value = false
   }
