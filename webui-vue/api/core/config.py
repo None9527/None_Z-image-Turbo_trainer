@@ -75,6 +75,7 @@ GENERATION_OUTPUT_PATH = _resolve_path("GENERATION_OUTPUT_PATH", "./outputs")  #
 OUTPUTS_DIR = GENERATION_OUTPUT_PATH  # 图片生成输出目录
 CONFIGS_DIR = PROJECT_ROOT / "configs"
 OUTPUT_BASE_DIR = OUTPUT_BASE_PATH  # 兼容旧代码
+LOGS_PATH = OUTPUT_BASE_PATH / "logs"  # TensorBoard 日志统一目录
 
 # Create necessary directories
 OUTPUTS_DIR.mkdir(exist_ok=True)
@@ -83,6 +84,7 @@ DATASETS_DIR.mkdir(parents=True, exist_ok=True)
 LORA_PATH.mkdir(parents=True, exist_ok=True)
 FINETUNE_PATH.mkdir(parents=True, exist_ok=True)
 CONTROLNET_PATH.mkdir(parents=True, exist_ok=True)
+LOGS_PATH.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
 # 启动时路径诊断日志
@@ -105,6 +107,7 @@ print(f"[CONFIG] OUTPUT_BASE_PATH      = {OUTPUT_BASE_PATH}")
 print(f"[CONFIG]   └── LORA_PATH       = {LORA_PATH}")
 print(f"[CONFIG]   └── FINETUNE_PATH   = {FINETUNE_PATH}")
 print(f"[CONFIG]   └── CONTROLNET_PATH = {CONTROLNET_PATH}")
+print(f"[CONFIG]   └── LOGS_PATH       = {LOGS_PATH}")
 print("-" * 60)
 print(f"[CONFIG] GENERATION_OUTPUT_PATH (env) = {os.getenv('GENERATION_OUTPUT_PATH', '<未设置>')}")
 print(f"[CONFIG] GENERATION_OUTPUT_PATH       = {GENERATION_OUTPUT_PATH}")

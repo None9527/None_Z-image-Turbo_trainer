@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from core.config import CONFIGS_DIR, OUTPUT_BASE_DIR, MODEL_PATH, SaveConfigRequest, PROJECT_ROOT, get_model_path, LORA_PATH, FINETUNE_PATH, CONTROLNET_PATH
+from core.config import CONFIGS_DIR, OUTPUT_BASE_DIR, MODEL_PATH, SaveConfigRequest, PROJECT_ROOT, get_model_path, LORA_PATH, FINETUNE_PATH, CONTROLNET_PATH, LOGS_PATH
 from core import state
 
 router = APIRouter(prefix="/api/training", tags=["training"])
@@ -805,7 +805,7 @@ async def list_training_runs():
         from utils.tensorboard_parser import list_training_runs as scan_runs
         
         # TensorBoard 日志保存在 output/logs 目录
-        logs_dir = OUTPUT_BASE_DIR / "logs"
+        logs_dir = LOGS_PATH
         runs = scan_runs(logs_dir)
         
         return {"runs": runs}
@@ -822,7 +822,7 @@ async def delete_training_run(run_name: str):
     """
     import shutil
     
-    logs_dir = OUTPUT_BASE_DIR / "logs" / run_name
+    logs_dir = LOGS_PATH / run_name
     
     if not logs_dir.exists():
         raise HTTPException(status_code=404, detail=f"训练记录 '{run_name}' 不存在")
@@ -845,7 +845,7 @@ async def get_training_scalars(run: str = "", tag: str = "train/loss"):
     try:
         from utils.tensorboard_parser import get_scalar_data, list_training_runs as scan_runs
         
-        logs_dir = OUTPUT_BASE_DIR / "logs"
+        logs_dir = LOGS_PATH
         
         # 如果未指定run，使用最新的
         if not run:
@@ -872,7 +872,7 @@ async def get_available_tags(run: str = ""):
     try:
         from utils.tensorboard_parser import get_available_tags as fetch_tags, list_training_runs as scan_runs
         
-        logs_dir = OUTPUT_BASE_DIR / "logs"
+        logs_dir = LOGS_PATH
         
         # 如果未指定run，使用最新的
         if not run:
@@ -899,7 +899,7 @@ async def get_all_scalars(run: str = ""):
     try:
         from utils.tensorboard_parser import get_all_scalars as fetch_all, list_training_runs as scan_runs
         
-        logs_dir = OUTPUT_BASE_DIR / "logs"
+        logs_dir = LOGS_PATH
         
         # 如果未指定run，使用最新的
         if not run:
