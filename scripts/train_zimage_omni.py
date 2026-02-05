@@ -35,6 +35,7 @@ from tqdm import tqdm
 from accelerate import Accelerator
 from accelerate.utils import set_seed
 from diffusers.optimization import get_scheduler
+from zimage_trainer.utils.lr_schedulers import get_scheduler_with_onecycle
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 
@@ -125,6 +126,10 @@ def parse_args():
     parser.add_argument("--lr_scheduler", type=str, default="cosine_with_restarts")
     parser.add_argument("--lr_warmup_steps", type=int, default=100)
     parser.add_argument("--lr_num_cycles", type=int, default=1)
+    # OneCycleLR specific
+    parser.add_argument("--lr_pct_start", type=float, default=0.1)
+    parser.add_argument("--lr_div_factor", type=float, default=10.0)
+    parser.add_argument("--lr_final_div_factor", type=float, default=100.0)
     
     args = parser.parse_args()
     
@@ -192,6 +197,10 @@ def parse_args():
         args.lr_scheduler = training_cfg.get("lr_scheduler", args.lr_scheduler)
         args.lr_warmup_steps = training_cfg.get("lr_warmup_steps", args.lr_warmup_steps)
         args.lr_num_cycles = training_cfg.get("lr_num_cycles", args.lr_num_cycles)
+        # OneCycleLR specific
+        args.lr_pct_start = training_cfg.get("lr_pct_start", args.lr_pct_start)
+        args.lr_div_factor = training_cfg.get("lr_div_factor", args.lr_div_factor)
+        args.lr_final_div_factor = training_cfg.get("lr_final_div_factor", args.lr_final_div_factor)
     
     return args
 
@@ -449,13 +458,20 @@ def main():
     
     max_train_steps = len(dataloader) * args.num_train_epochs // args.gradient_accumulation_steps
     
-    lr_scheduler = get_scheduler(
+    lr_scheduler = get_scheduler_with_onecycle(
         args.lr_scheduler,
         optimizer=optimizer,
-        num_warmup_steps=args.lr_warmup_steps,
         num_training_steps=max_train_steps,
+        num_warmup_steps=args.lr_warmup_steps,
         num_cycles=args.lr_num_cycles,
+        # OneCycleLR specific
+        max_lr=args.learning_rate,
+        pct_start=args.lr_pct_start,
+        div_factor=args.lr_div_factor,
+        final_div_factor=args.lr_final_div_factor,
     )
+    if args.lr_scheduler == "one_cycle":
+        logger.info(f"  🚀 OneCycleLR: {args.learning_rate/args.lr_div_factor:.2e} → {args.learning_rate:.2e} → {args.learning_rate/args.lr_final_div_factor:.2e}")
     
     # TensorBoard
     writer = None

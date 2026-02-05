@@ -496,6 +496,72 @@ async def list_datasets():
         "datasetsDirExists": DATASETS_DIR.exists()
     }
 
+
+class ValidatePathRequest(BaseModel):
+    path: str
+
+
+@router.post("/validate")
+async def validate_dataset_path(request: ValidatePathRequest):
+    """验证任意路径是否为有效的训练数据集
+    
+    支持 Windows (D:/datasets/xxx) 和 Linux (/datasets/xxx) 路径
+    """
+    import os
+    
+    raw_path = request.path.strip()
+    if not raw_path:
+        return {"valid": False, "error": "路径不能为空"}
+    
+    # 规范化路径（支持 Windows 反斜杠和正斜杠）
+    normalized_path = raw_path.replace("\\", "/")
+    
+    # 尝试创建 Path 对象
+    try:
+        path = Path(normalized_path)
+    except Exception as e:
+        return {"valid": False, "error": f"无效路径格式: {e}"}
+    
+    print(f"[Dataset Validate] Raw: {raw_path}")
+    print(f"[Dataset Validate] Normalized: {normalized_path}")
+    print(f"[Dataset Validate] Path object: {path}")
+    print(f"[Dataset Validate] Exists: {path.exists()}")
+    
+    if not path.exists():
+        return {"valid": False, "error": f"路径不存在: {normalized_path}"}
+    
+    if not path.is_dir():
+        return {"valid": False, "error": "路径不是目录"}
+    
+    # 检查是否包含图片或缓存文件
+    image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'}
+    image_count = 0
+    cache_count = 0
+    
+    for f in path.rglob('*'):
+        if f.is_file():
+            if f.suffix.lower() in image_extensions:
+                image_count += 1
+            elif f.suffix.lower() == '.safetensors' and '_zi' in f.name:
+                cache_count += 1
+    
+    print(f"[Dataset Validate] Images: {image_count}, Caches: {cache_count}")
+    
+    if image_count == 0 and cache_count == 0:
+        return {
+            "valid": False, 
+            "error": "目录中没有找到图片或缓存文件",
+            "path": normalized_path
+        }
+    
+    return {
+        "valid": True,
+        "path": normalized_path,
+        "imageCount": image_count,
+        "cacheCount": cache_count,
+        "hasCachedData": cache_count > 0
+    }
+
 @router.post("/create")
 async def create_dataset(name: str = Form(...)):
     """Create a new dataset folder"""

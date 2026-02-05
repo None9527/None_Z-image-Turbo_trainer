@@ -30,6 +30,7 @@ from tqdm import tqdm
 from accelerate import Accelerator
 from accelerate.utils import set_seed
 from diffusers.optimization import get_scheduler
+from zimage_trainer.utils.lr_schedulers import get_scheduler_with_onecycle
 from torch.utils.tensorboard import SummaryWriter
 from safetensors.torch import save_file
 
@@ -162,6 +163,10 @@ def parse_args():
     parser.add_argument("--lr_scheduler", type=str, default="cosine_with_restarts")
     parser.add_argument("--lr_warmup_steps", type=int, default=100)
     parser.add_argument("--lr_num_cycles", type=int, default=1)
+    # OneCycleLR specific
+    parser.add_argument("--lr_pct_start", type=float, default=0.1)
+    parser.add_argument("--lr_div_factor", type=float, default=10.0)
+    parser.add_argument("--lr_final_div_factor", type=float, default=100.0)
     
     args = parser.parse_args()
     
@@ -278,6 +283,10 @@ def parse_args():
         args.lr_scheduler = training_cfg.get("lr_scheduler", args.lr_scheduler)
         args.lr_warmup_steps = training_cfg.get("lr_warmup_steps", args.lr_warmup_steps)
         args.lr_num_cycles = training_cfg.get("lr_num_cycles", args.lr_num_cycles)
+        # OneCycleLR specific
+        args.lr_pct_start = training_cfg.get("lr_pct_start", getattr(args, 'lr_pct_start', 0.1))
+        args.lr_div_factor = training_cfg.get("lr_div_factor", getattr(args, 'lr_div_factor', 10.0))
+        args.lr_final_div_factor = training_cfg.get("lr_final_div_factor", getattr(args, 'lr_final_div_factor', 100.0))
         
         # Finetune 模块选择
         finetune_cfg = config.get("finetune", {})
@@ -645,13 +654,19 @@ def main():
         lr_scheduler = None
         logger.info("  📈 Adafactor 自适应 LR 模式（无外部调度器）")
     else:
-        lr_scheduler = get_scheduler(
+        lr_scheduler = get_scheduler_with_onecycle(
             args.lr_scheduler,
             optimizer=optimizer,
-            num_warmup_steps=args.lr_warmup_steps,
             num_training_steps=max_train_steps,
+            num_warmup_steps=args.lr_warmup_steps,
             num_cycles=args.lr_num_cycles,
+            max_lr=args.learning_rate,
+            pct_start=getattr(args, 'lr_pct_start', 0.1),
+            div_factor=getattr(args, 'lr_div_factor', 10.0),
+            final_div_factor=getattr(args, 'lr_final_div_factor', 100.0),
         )
+        if args.lr_scheduler == "one_cycle":
+            logger.info(f"  🚀 OneCycleLR: {args.learning_rate/getattr(args, 'lr_div_factor', 10.0):.2e} → {args.learning_rate:.2e} → {args.learning_rate/getattr(args, 'lr_final_div_factor', 100.0):.2e}")
     
     logger.info(f"  ✓ 总步数: {max_train_steps}")
     

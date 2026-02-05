@@ -458,6 +458,7 @@
               </label>
               <el-select v-model="config.training.lr_scheduler" style="width: 100%">
                 <el-option label="constant (固定) ⭐推荐" value="constant" />
+                <el-option label="one_cycle (单周期) 🚀FP8优化" value="one_cycle" />
                 <el-option label="linear (线性衰减)" value="linear" />
                 <el-option label="cosine (余弦退火)" value="cosine" />
                 <el-option label="cosine_with_restarts (余弦重启)" value="cosine_with_restarts" />
@@ -484,6 +485,45 @@
               <el-slider v-model="config.training.lr_num_cycles" :min="1" :max="5" :step="1" :show-tooltip="false" class="slider-flex" />
               <el-input-number v-model="config.training.lr_num_cycles" :min="1" :max="5" controls-position="right" class="input-fixed" />
             </div>
+            
+            <!-- OneCycleLR 专用参数 -->
+            <template v-if="config.training.lr_scheduler === 'one_cycle'">
+              <div class="control-row">
+                <span class="label">
+                  Warmup 比例 (pct_start)
+                  <el-tooltip content="warmup 占总步数的比例。0.1 = 前 10% 用于 lr 升高，之后 90% 用于 cosine 下降" placement="top">
+                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-slider v-model="config.training.lr_pct_start" :min="0.05" :max="0.5" :step="0.05" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.training.lr_pct_start" :min="0.05" :max="0.5" :step="0.05" controls-position="right" class="input-fixed" />
+              </div>
+              <div class="control-row">
+                <span class="label">
+                  初始除数 (div_factor)
+                  <el-tooltip content="初始 lr = max_lr / div_factor。10 = 从 1/10 的 lr 开始 warmup" placement="top">
+                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-slider v-model="config.training.lr_div_factor" :min="5" :max="50" :step="5" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.training.lr_div_factor" :min="5" :max="50" :step="5" controls-position="right" class="input-fixed" />
+              </div>
+              <div class="control-row">
+                <span class="label">
+                  最终除数 (final_div_factor)
+                  <el-tooltip content="最终 lr = max_lr / final_div_factor。100 = 最终降到 1/100 的 lr，实现深度下探" placement="top">
+                    <el-icon class="help-icon"><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </span>
+                <el-slider v-model="config.training.lr_final_div_factor" :min="10" :max="1000" :step="10" :show-tooltip="false" class="slider-flex" />
+                <el-input-number v-model="config.training.lr_final_div_factor" :min="10" :max="1000" :step="10" controls-position="right" class="input-fixed" />
+              </div>
+              <el-alert type="info" :closable="false" show-icon style="margin-top: 8px">
+                OneCycleLR: lr 从 {{ (config.training.learning_rate / config.training.lr_div_factor).toExponential(1) }} 
+                → 峰值 {{ config.training.learning_rate_str }} 
+                → 最终 {{ (config.training.learning_rate / config.training.lr_final_div_factor).toExponential(1) }}
+              </el-alert>
+            </template>
 
             <div class="subsection-label">梯度与内存 (GRADIENT & MEMORY)</div>
             <div class="control-row">
@@ -676,7 +716,26 @@
               </div>
               <div class="form-row-full">
                 <label>缓存目录路径</label>
-                <el-input v-model="ds.cache_directory" placeholder="d:/AI/datasets/cache" />
+                <el-input 
+                  v-model="ds.cache_directory" 
+                  placeholder="D:/datasets/xxx 或 /datasets/xxx" 
+                  @blur="validateDatasetPath(ds, idx)"
+                  :class="{'is-valid': ds._validated && ds._valid, 'is-invalid': ds._validated && !ds._valid}"
+                >
+                  <template #suffix v-if="ds._validating">
+                    <el-icon class="is-loading"><Loading /></el-icon>
+                  </template>
+                  <template #suffix v-else-if="ds._validated">
+                    <el-icon v-if="ds._valid" style="color: var(--el-color-success)"><Check /></el-icon>
+                    <el-icon v-else style="color: var(--el-color-danger)"><Close /></el-icon>
+                  </template>
+                </el-input>
+                <div v-if="ds._validated && ds._valid" class="path-info" style="font-size: 12px; color: var(--el-color-success); margin-top: 4px;">
+                  ✓ {{ ds._imageCount || 0 }} 图片{{ ds._hasCached ? ', 已缓存' : '' }}
+                </div>
+                <div v-else-if="ds._validated && !ds._valid" class="path-error" style="font-size: 12px; color: var(--el-color-danger); margin-top: 4px;">
+                  ✗ {{ ds._error || '路径无效' }}
+                </div>
               </div>
               <div class="control-row">
                 <span class="label">
@@ -1112,7 +1171,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Setting, Refresh, Check, FolderOpened, DataAnalysis, Grid, TrendCharts, Files, Tools, Plus, Delete, Document, InfoFilled, QuestionFilled, Promotion, Cpu } from '@element-plus/icons-vue'
+import { Setting, Refresh, Check, Close, Loading, FolderOpened, DataAnalysis, Grid, TrendCharts, Files, Tools, Plus, Delete, Document, InfoFilled, QuestionFilled, Promotion, Cpu } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
@@ -1348,6 +1407,10 @@ function getDefaultConfig() {
       lr_scheduler: 'constant',
       lr_warmup_steps: 0,
       lr_num_cycles: 1,
+      // OneCycleLR 专用参数
+      lr_pct_start: 0.1,
+      lr_div_factor: 10,
+      lr_final_div_factor: 100,
       // 基础损失权重
       lambda_l1: 1.0,
       lambda_cosine: 0.1,
@@ -1667,6 +1730,40 @@ function addDataset() {
 // Remove dataset
 function removeDataset(idx: number) {
   config.value.dataset.datasets.splice(idx, 1)
+}
+
+// 验证数据集路径
+async function validateDatasetPath(ds: any, idx: number) {
+  if (!ds.cache_directory) {
+    ds._validated = false
+    return
+  }
+  
+  ds._validating = true
+  ds._validated = false
+  
+  try {
+    const res = await axios.post('/api/dataset/validate', {
+      path: ds.cache_directory
+    })
+    
+    ds._validated = true
+    ds._valid = res.data.valid
+    ds._error = res.data.error
+    ds._imageCount = res.data.imageCount
+    ds._hasCached = res.data.hasCachedData
+    
+    // 如果服务器返回了规范化路径，更新
+    if (res.data.valid && res.data.path) {
+      ds.cache_directory = res.data.path
+    }
+  } catch (e: any) {
+    ds._validated = true
+    ds._valid = false
+    ds._error = e.response?.data?.detail || '验证失败'
+  } finally {
+    ds._validating = false
+  }
 }
 
 // 正则数据集操作

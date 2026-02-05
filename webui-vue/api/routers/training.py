@@ -653,6 +653,10 @@ def generate_training_toml_config(config: Dict[str, Any], model_type: str = "zim
         f'lr_scheduler = "{config.get("training", {}).get("lr_scheduler", "constant")}"',
         f"lr_warmup_steps = {config.get('training', {}).get('lr_warmup_steps', 0)}",
         f"lr_num_cycles = {config.get('training', {}).get('lr_num_cycles', 1)}",
+        # OneCycleLR 专用参数
+        f"lr_pct_start = {config.get('training', {}).get('lr_pct_start', 0.1)}",
+        f"lr_div_factor = {config.get('training', {}).get('lr_div_factor', 10)}",
+        f"lr_final_div_factor = {config.get('training', {}).get('lr_final_div_factor', 100)}",
         # 基础损失权重
         f"lambda_l1 = {config.get('training', {}).get('lambda_l1', 1.0)}",
         f"lambda_cosine = {config.get('training', {}).get('lambda_cosine', 0.1)}",
