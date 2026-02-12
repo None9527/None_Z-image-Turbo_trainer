@@ -298,43 +298,64 @@ class LoRANetwork(nn.Module):
     
     def load_weights(self, path: str):
         """Load LoRA weights from safetensors file.
-        
+
         Supports multiple formats:
         1. diffusion_model.layers.0.xxx (ComfyUI v2 format)
         2. layers.0.xxx (simple format)
         3. lora_unet_layers_0_xxx (legacy Kohya format)
+        4. PEFT format: xxx.lora_A.default.weight / lora_B.default.weight
         """
         from safetensors.torch import load_file
-        
+
         state_dict = load_file(path)
         loaded = 0
-        
+
+        # Detect if this is PEFT format (lora_A/lora_B instead of lora_down/lora_up)
+        is_peft = any("lora_A" in k for k in state_dict.keys())
+
         for name, lora_module in self.lora_modules.items():
             base_key = self._convert_name_to_key(name)
-            
+
             # Try formats in order of preference
             formats = [
                 f"diffusion_model.{base_key}",  # ComfyUI v2
                 base_key,                        # Simple
                 f"lora_unet_{name}",            # Legacy Kohya
             ]
-            
+
             down_key = None
             up_key = None
             for prefix in formats:
+                if is_peft:
+                    # PEFT format: lora_A.default.weight / lora_B.default.weight
+                    test_down = f"{prefix}.lora_A.default.weight"
+                    if test_down in state_dict:
+                        down_key = test_down
+                        up_key = f"{prefix}.lora_B.default.weight"
+                        break
+                    # Also try without .default
+                    test_down = f"{prefix}.lora_A.weight"
+                    if test_down in state_dict:
+                        down_key = test_down
+                        up_key = f"{prefix}.lora_B.weight"
+                        break
+
                 test_down = f"{prefix}.lora_down.weight"
                 if test_down in state_dict:
                     down_key = test_down
                     up_key = f"{prefix}.lora_up.weight"
                     break
-            
+
             if down_key and down_key in state_dict:
                 lora_module.lora_down.weight.data.copy_(state_dict[down_key])
                 loaded += 1
             if up_key and up_key in state_dict:
                 lora_module.lora_up.weight.data.copy_(state_dict[up_key])
-        
-        logger.info(f"Loaded {loaded} LoRA modules from {path}")
+
+        if is_peft:
+            logger.info(f"Loaded {loaded} LoRA modules from {path} (PEFT format)")
+        else:
+            logger.info(f"Loaded {loaded} LoRA modules from {path}")
 
 
 def create_network(
