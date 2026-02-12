@@ -45,6 +45,7 @@ from zimage_trainer.utils.l2_scheduler import L2RatioScheduler, create_l2_schedu
 from zimage_trainer.utils.timestep_aware_loss import TimestepAwareLossScheduler, create_timestep_aware_scheduler_from_args
 from zimage_trainer.losses.frequency_aware_loss import FrequencyAwareLoss
 from zimage_trainer.losses.style_structure_loss import LatentStyleStructureLoss
+import torchvision.utils as vutils
 
 # Setup logging
 logging.basicConfig(
@@ -52,6 +53,88 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# =========================================================================
+# TensorBoard Image Logging
+# =========================================================================
+_vae_for_logging = None  # lazily loaded, kept on CPU
+
+def _get_vae(dit_path: str, device="cpu"):
+    """Lazily load VAE from the model directory (sibling of transformer dir)."""
+    global _vae_for_logging
+    if _vae_for_logging is not None:
+        return _vae_for_logging
+
+    vae_path = os.path.join(os.path.dirname(dit_path), "vae")
+    if not os.path.isdir(vae_path):
+        logger.warning(f"[IMG LOG] VAE not found at {vae_path}, image logging disabled")
+        return None
+
+    from diffusers import AutoencoderKL
+    logger.info(f"[IMG LOG] Loading VAE from {vae_path} (one-time, kept on CPU)")
+    _vae_for_logging = AutoencoderKL.from_pretrained(vae_path, torch_dtype=torch.bfloat16)
+    _vae_for_logging.eval()
+    _vae_for_logging.requires_grad_(False)
+    return _vae_for_logging
+
+
+@torch.no_grad()
+def log_training_images(
+    writer: SummaryWriter,
+    global_step: int,
+    dit_path: str,
+    latents: torch.Tensor,        # clean x_0
+    noisy_latents: torch.Tensor,  # x_t
+    model_pred: torch.Tensor,     # predicted velocity
+    timesteps: torch.Tensor,      # raw timesteps (0-1000)
+    device: torch.device,
+    max_images: int = 4,
+):
+    """Decode latents and log source vs reconstruction to TensorBoard."""
+    vae = _get_vae(dit_path)
+    if vae is None:
+        return
+
+    n = min(max_images, latents.shape[0])
+
+    # Move VAE to GPU temporarily
+    vae.to(device)
+
+    try:
+        # 1. Decode ground truth (source)
+        gt = latents[:n].to(device, dtype=torch.bfloat16)
+        gt_scaled = (gt / vae.config.scaling_factor) + vae.config.shift_factor
+        source_imgs = vae.decode(gt_scaled, return_dict=False)[0].float().clamp(-1, 1) * 0.5 + 0.5
+
+        # 2. Reconstruct predicted x0 from model output
+        # x_t = (1-sigma)*x_0 + sigma*noise  →  x_0 = x_t - sigma*v
+        sigma = (timesteps[:n] / 1000.0).view(-1, 1, 1, 1).to(device, dtype=torch.bfloat16)
+        pred_x0 = noisy_latents[:n].to(device, dtype=torch.bfloat16) - sigma * model_pred[:n].to(device, dtype=torch.bfloat16)
+        pred_scaled = (pred_x0 / vae.config.scaling_factor) + vae.config.shift_factor
+        recon_imgs = vae.decode(pred_scaled, return_dict=False)[0].float().clamp(-1, 1) * 0.5 + 0.5
+
+        # 3. Decode noisy input for reference
+        noisy = noisy_latents[:n].to(device, dtype=torch.bfloat16)
+        noisy_scaled = (noisy / vae.config.scaling_factor) + vae.config.shift_factor
+        noisy_imgs = vae.decode(noisy_scaled, return_dict=False)[0].float().clamp(-1, 1) * 0.5 + 0.5
+
+        # Log grids: source | noisy | reconstruction
+        source_grid = vutils.make_grid(source_imgs, nrow=n, normalize=False)
+        noisy_grid = vutils.make_grid(noisy_imgs, nrow=n, normalize=False)
+        recon_grid = vutils.make_grid(recon_imgs, nrow=n, normalize=False)
+
+        writer.add_image("images/1_source", source_grid, global_step)
+        writer.add_image("images/2_noisy_input", noisy_grid, global_step)
+        writer.add_image("images/3_pred_reconstruction", recon_grid, global_step)
+
+        # Log mean timestep for context
+        writer.add_scalar("images/mean_timestep", timesteps[:n].float().mean().item(), global_step)
+
+    finally:
+        # Move VAE back to CPU to free VRAM
+        vae.to("cpu")
+        torch.cuda.empty_cache()
+
 
 # Interrupt handler
 _interrupted = False
@@ -471,10 +554,10 @@ def main():
         logger.info(f"\n[RESUME] 继续训练模式: {args.resume_lora}")
         from safetensors.torch import load_file
         state_dict = load_file(args.resume_lora)
-        # 从权重推断 rank (找第一个 lora_down 权重)
+        # 从权重推断 rank (找第一个 lora_down 或 lora_A 权重)
         for key, value in state_dict.items():
-            if "lora_down" in key and value.dim() == 2:
-                args.network_dim = value.shape[0]  # down 的 out_features 就是 rank
+            if ("lora_down" in key or "lora_A" in key) and value.dim() == 2:
+                args.network_dim = value.shape[0]  # down/A 的 out_features 就是 rank
                 logger.info(f"  [RESUME] 从权重推断 rank = {args.network_dim}")
                 break
         else:
@@ -1200,6 +1283,22 @@ def main():
                         writer.add_scalar("train/l2_loss", avg_l2, global_step)
                         writer.add_scalar("train/curvature_loss", curv, global_step)
                         writer.add_scalar("train/learning_rate", current_lr, global_step)
+
+                        # Log reconstruction images every 100 steps
+                        if global_step % 100 == 0:
+                            try:
+                                log_training_images(
+                                    writer=writer,
+                                    global_step=global_step,
+                                    dit_path=args.dit,
+                                    latents=latents.detach(),
+                                    noisy_latents=noisy_latents.detach(),
+                                    model_pred=model_pred.detach(),
+                                    timesteps=timesteps.detach(),
+                                    device=accelerator.device,
+                                )
+                            except Exception as e:
+                                logger.warning(f"[IMG LOG] Failed: {e}")
                 
                 # ========== 正则训练步骤 (按比例执行) ==========
                 # 正则化步骤在主训练步骤完成后独立执行，不参与梯度累积周期
