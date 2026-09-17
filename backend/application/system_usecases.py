@@ -64,21 +64,3 @@ class GetModelStatusUseCase:
         return self._model_mgr.get_model_status(model_type)
 
 
-class DownloadModelUseCase:
-    """Start model download."""
-
-    def __init__(self, model_mgr: IModelManager):
-        self._model_mgr = model_mgr
-
-    def execute(self, model_type: str = "zimage") -> bool:
-        return self._model_mgr.start_download(model_type)
-
-
-class CancelDownloadUseCase:
-    """Cancel model download."""
-
-    def __init__(self, model_mgr: IModelManager):
-        self._model_mgr = model_mgr
-
-    def execute(self) -> bool:
-        return self._model_mgr.cancel_download()

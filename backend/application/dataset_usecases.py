@@ -133,11 +133,3 @@ class CalculateBucketsUseCase:
         return self._calculator.calculate_buckets(path, batch_size, resolution_limit)
 
 
-class CheckCacheUseCase:
-    """Check dataset cache status."""
-
-    def __init__(self, cache_repo: IDatasetCacheRepository):
-        self._cache_repo = cache_repo
-
-    def execute(self, dataset_path: str, model_type: str = "zimage") -> CacheStatus:
-        return self._cache_repo.check_cache_status(dataset_path, model_type)
